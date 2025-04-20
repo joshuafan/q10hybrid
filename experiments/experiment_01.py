@@ -12,13 +12,14 @@ from argparse import ArgumentParser
 from datetime import datetime
 
 from project.fluxdata import FluxData
-from models.hybrid import Q10Model
+from models.hybrid import Q10Model, Q10ModelSimple
 
 # Hardcoded `Trainer` args. Note that these cannot be passed via cli.
 TRAINER_ARGS = dict(
     max_epochs=100,
     log_every_n_steps=1,
-    weights_summary=None
+    # weights_summary=None,
+    accelerator="cpu",
 )
 
 
@@ -31,6 +32,9 @@ class Objective(object):
         seed = trial.suggest_int('seed', 0, 999999999999)
         use_ta = trial.suggest_categorical('use_ta', [True, False])
         dropout = trial.suggest_float('dropout', 0.0, 1.0)
+        lambda_jacobian_l1 = trial.suggest_float('lambda_jacobian_l1', 0.0, 100.0)
+        lambda_jacobian_l05 = trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
+        lambda_robustness = trial.suggest_float('lambda_robustness', 0.0, 100.0)
 
         if use_ta:
             features = ['sw_pot', 'dsw_pot', 'ta']
@@ -86,13 +90,21 @@ class Objective(object):
             learning_rate=self.args.learning_rate,
             dropout=dropout,
             weight_decay=self.args.weight_decay,
-            num_steps=len(train_loader) * max_epochs)
+            lambda_jacobian_l1=lambda_jacobian_l1,
+            lambda_jacobian_l05=lambda_jacobian_l05,
+            lambda_robustness=lambda_robustness,
+            num_steps=len(train_loader) * max_epochs,
+            model=self.args.model)
 
         # ------------
         # training
         # ------------
-        trainer = pl.Trainer.from_argparse_args(
-            self.args,
+        # print("Args", self.args)
+        # exit(1)
+        # trainer = pl.Trainer.from_argparse_args(
+        #     self.args,
+        
+        trainer = pl.Trainer(
             default_root_dir=self.args.log_dir,
             **TRAINER_ARGS,
             callbacks=[
@@ -105,8 +117,8 @@ class Objective(object):
                     save_top_k=1,
                     verbose=False,
                     monitor='valid_loss',
-                    mode='min',
-                    prefix=model.__class__.__name__)
+                    mode='min')
+                    #prefix=model.__class__.__name__)
             ])
         trainer.fit(model, train_loader, val_loader)
 
@@ -163,7 +175,7 @@ def main(parser: ArgumentParser = None, **kwargs):
         parser = ArgumentParser()
 
     parser = Objective.add_project_specific_args(parser)
-    parser = pl.Trainer.add_argparse_args(parser)
+    # parser = pl.Trainer.add_argparse_args(parser)  # TODO
     parser = Q10Model.add_model_specific_args(parser)
     parser.add_argument('--create_study', action='store_true', help='create new study (deletes old) and exits')
     parser.add_argument('--single_seed', action='store_true', help='use only one seed instead of (1, ..., 10).')
@@ -179,10 +191,14 @@ def main(parser: ArgumentParser = None, **kwargs):
     # study setup
     # ------------
     search_space = {
-        'q10_init': [0.5, 1.5, 2.5],
-        'seed': [0] if args.single_seed else [i for i in range(10)],
-        'dropout': [0.0, 0.2, 0.4, 0.6],
-        'use_ta': [True, False]
+        'q10_init': [0.5],  # [0.5, 1.5, 2.5],
+        'seed': [0], # if args.single_seed else [i for i in range(10)],
+        'dropout': [0.0],  # , 0.2, 0.4, 0.6],
+        'use_ta': [True],  # [True, False]
+        'lambda_jacobian_l1': [0],  #  [0.001, 0.01, 0.1, 1.0, 10.0]
+        'lambda_jacobian_l05': [0],
+        'lambda_robustness': [0],
+        'lambda_out_of_range': [1.0]
     }
 
     sql_file = os.path.abspath(os.path.join(args.log_dir, "optuna.db"))

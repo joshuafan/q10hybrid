@@ -94,3 +94,75 @@ class FeedForward(nn.Module):
             Tensor: the output tensor.
         """
         return self.model(x)
+
+
+class SENN_Simple(nn.Module):
+    def __init__(self,
+                 num_inputs: int,
+                 num_outputs: int,
+                 num_hidden: int,
+                 num_layers: int,
+                 dropout: float, 
+                 activation: str,
+                 activation_last: Optional[torch.nn.Module] = None,
+                 dropout_last: bool = False,
+                 layer_norm: bool = False) -> None:
+        """
+        Following the idea of 'Self-Explaining Neural Networks', learns a function
+
+        f(x) = \theta(x)^T x
+        
+        where x \in R^{num_inputs}, and theta(x): R^{num_inputs} -> R^{num_inputs * num_outputs}
+        is parameterized by a neural network. The commandline arguments
+        all refer to the theta(x) neural network, except for num_outputs.
+        """
+        super().__init__()
+        self.num_inputs = num_inputs
+        self.num_outputs = num_outputs
+        self.theta = FeedForward(
+            num_inputs=num_inputs,
+            num_outputs=num_inputs * num_outputs,
+            num_hidden=num_hidden,
+            num_layers=num_layers,
+            dropout=dropout,
+            activation=activation,
+            activation_last=activation_last,
+            dropout_last=dropout_last,
+            layer_norm=layer_norm,
+        )
+        self.bias = torch.nn.Parameter(torch.zeros(num_outputs))  # global bias
+
+
+    def forward(self, x):
+        """
+        x: torch.Tensor
+            Input data of shape (batch, num_inputs)
+        """
+        assert x.shape[1] == self.num_inputs
+        coefs = self.theta(x)  # [batch, num_inputs*num_outputs]
+        self.coefs = coefs.reshape((x.shape[0], self.num_outputs, self.num_inputs))
+        self.predictions = torch.bmm(self.coefs, x.unsqueeze(-1)).squeeze(-1) + self.bias  # [batch, num_outputs]; bias is [num_outputs]
+        # print("Coefs", self.coefs[0:5], "Bias", self.bias)
+        return self.predictions
+
+
+def robustness_loss(x, predictions, coefs):
+    """
+    Computes robustness loss of Self-Explaining Neural Networks:
+    
+    \| \grad_x f(x) - \theta(x) \|_2^2
+
+    x: [batch, num_inputs]
+    predictions: [batch, num_outputs]
+    coefs: [batch, num_outputs, num_inputs]
+    """
+    batch_size = x.shape[0]
+    num_outputs = predictions.shape[1]
+    grad_tensor = torch.ones(batch_size, num_outputs).to(x.device)
+    J_yx = torch.autograd.grad(outputs=predictions, inputs=x, grad_outputs=grad_tensor, create_graph=True)[0] 
+    # [batch, num_inputs] -> [batch, num_outputs, num_inputs]
+    J_yx = J_yx.unsqueeze(1)
+    robustness_loss = J_yx - coefs
+    return robustness_loss.norm(p='fro')
+
+
