@@ -125,9 +125,27 @@ class FluxData(LightningDataModule):
             test_time: slice,
             context_size: int,
             batch_size: int,
-            data_loader_kwargs: Dict = {}) -> None:
+            data_loader_kwargs: Dict = {},
+            subset_frac: float = 1.0) -> None:
 
         super().__init__()
+
+        # OPTIONAL Generate new synthetic labels
+        print("RANGES")
+        print("SW_POT", ds["sw_pot"].min(), ds["sw_pot"].max(), ds["sw_pot"].mean(), ds["sw_pot"].std())
+        print("DSWPOT", ds["dsw_pot"].min(), ds["dsw_pot"].max(), ds["dsw_pot"].mean(), ds["dsw_pot"].std())
+        print("TA", ds["ta"].min(), ds["ta"].max(), ds["ta"].mean(), ds["ta"].std())
+
+        ds["rb_synth0"] = (ds["dsw_pot"] - 1.0) ** 2
+        ds["rb_synth1"] = ds["sw_pot"] ** 2 + ds["dsw_pot"] ** 2
+        ds["rb_synth2"] = np.log(ds["sw_pot"] - ds["sw_pot"].min() + 0.1) + np.log(ds["dsw_pot"] - ds["dsw_pot"].min() + 0.1)
+        for i in range(3):
+            # TODO Not sure where the true q10 is set, hardcoding to 1.5 for noqw.
+            ds[f"rb_synth{i}"] = ds[f"rb_synth{i}"] - ds[f"rb_synth{i}"].min() + 0.1  # Require non-negativity
+            ds[f"reco_synth{i}"] = ds[f"rb_synth{i}"] * (1.5 **(0.1 * (ds['ta'] - 15)))
+        ds["rb"] = ds["rb_synth2"]
+        ds["reco"] = ds["reco_synth2"]
+        print("Ds", ds)
 
         self._ds = ds
         self._features = [features] if isinstance(features, str) else features
@@ -142,6 +160,15 @@ class FluxData(LightningDataModule):
         self._ds_train = self._ds.sel(time=self._train_time).load()
         self._ds_valid = self._ds.sel(time=self._valid_time).load()
         self._ds_test = self._ds.sel(time=self._test_time).load()
+
+        # Random subset for low-data regime
+        if subset_frac < 1.0:
+            n = self._ds_train.time.size
+            self._ds_train = self._ds_train.isel(time=np.random.choice(n, size=int(subset_frac*n), replace=False))
+            n = self._ds_valid.time.size
+            self._ds_valid = self._ds_valid.isel(time=np.random.choice(n, size=int(subset_frac*n), replace=False))
+            n = self._ds_test.time.size
+            self._ds_test = self._ds_test.isel(time=np.random.choice(n, size=int(subset_frac*n), replace=False))
 
         # Register normalization parameters from training data.
         self._norm = Normalize()

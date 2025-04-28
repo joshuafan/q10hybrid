@@ -80,7 +80,7 @@ class Objective(object):
             valid_time=slice('2007-01-01', '2007-12-31'),
             test_time=slice('2008-01-01', '2008-12-31'),
             batch_size=self.args.batch_size,
-            data_loader_kwargs={'num_workers': 7, 'persistent_workers': True},  # persistent_workers=True necessary to avoid long pause between epochs https://github.com/Lightning-AI/pytorch-lightning/issues/10389 
+            data_loader_kwargs={'num_workers': 2, 'persistent_workers': True},  # persistent_workers=True necessary to avoid long pause between epochs https://github.com/Lightning-AI/pytorch-lightning/issues/10389 
             subset_frac=subset_frac)
 
         train_loader = fluxdata.train_dataloader()
@@ -192,7 +192,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/experiment_01/', type=str)
+            '--log_dir', default='./logs/experiment_grid3/', type=str)
         return parser
 
 
@@ -227,18 +227,18 @@ def main(parser: ArgumentParser = None, **kwargs):
         'seed': [0] if args.single_seed else [i for i in range(10)],
         'dropout': [0.0],  # , 0.2, 0.4, 0.6],
         'use_ta': [True],  # [True, False]
-        'lambda_out_of_range': [0.0],  # [1.0],
+        'lambda_out_of_range': [1.0],  # [1.0],
         'lambda_kan_l1': [0.0],  # = trial.suggest_float('lambda_kan_l1', 0.0, 2.0)
-        'lambda_kan_entropy': [0.0],  # = trial.suggest_float('lambda_kan_entropy', 0.0, 4.0)
+        'lambda_kan_entropy': [0.1],  # = trial.suggest_float('lambda_kan_entropy', 0.0, 4.0)
         'lambda_kan_coefdiff': [0.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
-        'lambda_kan_coefdiff2': [1.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
+        'lambda_kan_coefdiff2': [0.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
         'kan_grid': [3],  #trial.suggest_int('kan_grid', 3, 50)
         'kan_update_grid': [1],
         'kan_grid_margin': [1.0],  # = trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         'kan_noise': [0.3],  # = trial.suggest_float('kan_noise', 0.1, 0.5)
-        'kan_base_fun': ['zero'],  # = trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity'])
+        'kan_base_fun': ['silu_identity'],  # = trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity'])
         'kan_affine_trainable': [True],  # = trial.suggest_categorical('kan_affine_trainable', [True, False])
-        'lambda_jacobian_l1': [0],  #  [0.001, 0.01, 0.1, 1.0, 10.0]
+        'lambda_jacobian_l1': [0.1],  #  [0.001, 0.01, 0.1, 1.0, 10.0]
         'lambda_jacobian_l05': [0],
         # 'lambda_robustness': [0],
     }
@@ -251,7 +251,7 @@ def main(parser: ArgumentParser = None, **kwargs):
             shutil.rmtree(args.log_dir)
         os.makedirs(args.log_dir, exist_ok=True)
         study = optuna.create_study(
-            study_name="q10hybrid",
+            study_name="q10hybrid_hardconstraint",
             storage=sql_path,
             sampler=optuna.samplers.GridSampler(search_space),
             direction='minimize',
@@ -270,7 +270,7 @@ def main(parser: ArgumentParser = None, **kwargs):
     for _, v in search_space.items():
         n_trials *= len(v)
     study = optuna.load_study(
-        study_name="q10hybrid",
+        study_name="q10hybrid_hardconstraint",
         storage=sql_path,
         sampler=optuna.samplers.GridSampler(search_space))
     study.optimize(Objective(args), n_trials=n_trials)

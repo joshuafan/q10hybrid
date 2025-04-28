@@ -50,6 +50,27 @@ We investigate wheter we can estimate Q10 in both cases robustly and how model h
 
 ### Usage
 
+@joshuafan:
+Create study. Run this everytime the command-line arguments changed.
+```
+python experiments/experiment_01.py --create_study
+python experiments/experiment_hardconstraint.py --create_study
+
+```
+
+Commands
+```
+python experiments/experiment_01.py --model nn --rb_constraint softplus
+python experiments/experiment_linear.py --model nn --rb_constraint softplus --num_layers 1
+python experiments/experiment_hardconstraint.py --model kan --rb_constraint relu --num_layers 1 --learning_rate 1e-2 --weight_decay 0 --single_seed
+```
+
+KAN with softplus (so it has to learn inverse softplus)
+python experiments/experiment_hardconstraint.py --model kan --rb_constraint relu --num_layers 1 --learning_rate 1e-2 --weight_decay 0 --single_seed
+
+
+
+
 Run experiments:
 
 ```bash
