@@ -50,6 +50,11 @@ We investigate wheter we can estimate Q10 in both cases robustly and how model h
 
 ### Usage
 
+If running locally on Mac:
+```
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+```
+
 @joshuafan:
 Create study. Run this everytime the command-line arguments changed.
 ```
@@ -68,6 +73,11 @@ python experiments/experiment_hardconstraint.py --model kan --rb_constraint relu
 KAN with softplus (so it has to learn inverse softplus)
 python experiments/experiment_hardconstraint.py --model kan --rb_constraint relu --num_layers 1 --learning_rate 1e-2 --weight_decay 0 --single_seed
 
+
+Hyperparameter tuning
+```
+python experiments/20250428_hyperparam_hardconstraint.py --model kan --rb_constraint relu --num_layers 1 
+```
 
 
 

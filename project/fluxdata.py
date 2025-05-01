@@ -126,26 +126,71 @@ class FluxData(LightningDataModule):
             context_size: int,
             batch_size: int,
             data_loader_kwargs: Dict = {},
-            subset_frac: float = 1.0) -> None:
+            subset_frac: float = 1.0,
+            rb_synth: int = 0,
+            reco_noise_std: float = 0.0,
+            plot_dir: str = "./") -> None:
 
         super().__init__()
 
         # OPTIONAL Generate new synthetic labels
-        print("RANGES")
-        print("SW_POT", ds["sw_pot"].min(), ds["sw_pot"].max(), ds["sw_pot"].mean(), ds["sw_pot"].std())
-        print("DSWPOT", ds["dsw_pot"].min(), ds["dsw_pot"].max(), ds["dsw_pot"].mean(), ds["dsw_pot"].std())
-        print("TA", ds["ta"].min(), ds["ta"].max(), ds["ta"].mean(), ds["ta"].std())
+        # print("RANGES")
+        # print("SW_POT", ds["sw_pot"].min(), ds["sw_pot"].max(), ds["sw_pot"].mean(), ds["sw_pot"].std())
+        # print("DSWPOT", ds["dsw_pot"].min(), ds["dsw_pot"].max(), ds["dsw_pot"].mean(), ds["dsw_pot"].std())
+        # print("TA", ds["ta"].min(), ds["ta"].max(), ds["ta"].mean(), ds["ta"].std())
 
-        ds["rb_synth0"] = (ds["dsw_pot"] - 1.0) ** 2
-        ds["rb_synth1"] = ds["sw_pot"] ** 2 + ds["dsw_pot"] ** 2
-        ds["rb_synth2"] = np.log(ds["sw_pot"] - ds["sw_pot"].min() + 0.1) + np.log(ds["dsw_pot"] - ds["dsw_pot"].min() + 0.1)
-        for i in range(3):
-            # TODO Not sure where the true q10 is set, hardcoding to 1.5 for noqw.
-            ds[f"rb_synth{i}"] = ds[f"rb_synth{i}"] - ds[f"rb_synth{i}"].min() + 0.1  # Require non-negativity
-            ds[f"reco_synth{i}"] = ds[f"rb_synth{i}"] * (1.5 **(0.1 * (ds['ta'] - 15)))
-        ds["rb"] = ds["rb_synth2"]
-        ds["reco"] = ds["reco_synth2"]
-        print("Ds", ds)
+        # Versions of variables between (0, 1) for generating synthetic data
+        ds["sw_pot_norm"] = (ds["sw_pot"] - ds["sw_pot"].min()) / (ds["sw_pot"].max() - ds["sw_pot"].min())
+        ds["dsw_pot_norm"] = (ds["dsw_pot"] - ds["dsw_pot"].min()) / (ds["dsw_pot"].max() - ds["dsw_pot"].min())
+        ds["ta_norm"] = (ds["ta"] - ds["ta"].min()) / (ds["ta"].max() - ds["ta"].min())
+
+        # Synthetic Rb
+        import matplotlib.pyplot as plt
+        import os
+        import math
+        import torch
+
+        # # Verify the formulas used 
+        # # ds["rb_synth_tilde"] = 0.01 * ds["sw_pot"] - 0.005 * ds["dsw_pot"]
+        # # ds["rb_synth_paper"] = 0.75 * (ds["rb_synth_tilde"] - ds["rb_synth_tilde"].min() + 0.1 * math.pi)
+        # ds["rb_synth_paper"] = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"] + 1.03506858
+        # print("Rb shape", ds["rb_synth_paper"].values.shape)
+        # eps = torch.nn.init.trunc_normal_(torch.empty(ds["rb_synth_paper"].values.shape, requires_grad=False), mean=0, std=0.2, a=-0.95, b=0.95)
+        # print("Eps", eps)
+        # ds[f"reco_synth_paper"] = ds["rb_synth_paper"] * (1.5 ** (0.1 * (ds['ta'] - 15)))  # * (1 + eps.numpy())
+        # # print("Min value", ds["rb_synth_tilde"].min())
+        # # print("Rb theirs", ds["rb"].values)
+        # # print("Rb ours", ds["rb_synth_paper"].values)
+        # # print("Error", ds["rb"].values - ds["rb_synth_paper"].values)
+        # plt.scatter(ds["rb_synth_paper"].values, ds["rb"].values)
+        # plt.xlabel("Our generated Rb")
+        # plt.ylabel("Paper generated Rb")
+        # plt.savefig(os.path.join(plot_dir, "rb_synth_paper.png"))
+        # plt.close()
+        # plt.scatter(ds["reco_synth_paper"].values, ds["reco"].values)
+        # plt.xlabel("Our generated Reco")
+        # plt.ylabel("Paper generated Reco")
+        # plt.savefig(os.path.join(plot_dir, "reco_synth_paper.png"))
+        # plt.close()
+
+        if rb_synth != 0 and rb_synth != -1:
+            if rb_synth == 1:
+                ds["rb"] = (ds["dsw_pot_norm"] - 0.5) ** 2
+            elif rb_synth == 2:
+                ds["rb"] = (ds["sw_pot_norm"] - 0.5) ** 2 + (ds["dsw_pot_norm"] - 0.5) ** 2
+            elif rb_synth == 3:
+                ds["rb"] = np.minimum(0.3, np.maximum(0, ds["sw_pot_norm"] - 0.4)) - np.minimum(0.3, np.maximum(0, ds["dsw_pot_norm"] - 0.4))
+            else:
+                raise ValueError(f"rb_synth must be 0, 1, 2, or 3. Got {rb_synth}.")
+
+            # TODO Not sure where the true q10 is set, hardcoding to 1.5 for now.
+            ds["rb"] = ds["rb"] - ds["rb"].min() + 0.1  # Require non-negativity
+            ds["reco"] = ds["rb"] * (1.5 **(0.1 * (ds['ta'] - 15)))
+
+        # Add noise
+        if reco_noise_std > 0.0:
+            eps = torch.nn.init.trunc_normal_(torch.empty(ds["rb"].values.shape, requires_grad=False), mean=0, std=reco_noise_std, a=-0.95, b=0.95)
+            ds["reco"] = ds["reco"] * (1 + eps.numpy())
 
         self._ds = ds
         self._features = [features] if isinstance(features, str) else features
@@ -160,6 +205,42 @@ class FluxData(LightningDataModule):
         self._ds_train = self._ds.sel(time=self._train_time).load()
         self._ds_valid = self._ds.sel(time=self._valid_time).load()
         self._ds_test = self._ds.sel(time=self._test_time).load()
+
+        # If rb_synth is -1, remove high Reco values from the training data
+        if rb_synth == -1:
+            reco_quantile_90 = np.quantile(self._ds_train["reco"].values, 0.9)
+            self._ds_train = self._ds_train.where(self._ds_train["reco"] <= reco_quantile_90, drop=True)
+
+        # Visualizations
+        import os
+        import sys
+        sys.path.append('../')
+        sys.path.append('../../')
+        import visualization_utils
+        fig, axes = plt.subplots(5, 3, figsize=(9, 15), sharex=True)  #, gridspec_kw={'hspace': 0.35, 'wspace': 0.12})
+        variables = ["sw_pot", "dsw_pot", "ta", "rb", "reco"]
+        datasets = [("train", self._ds_train), ("valid", self._ds_valid), ("test", self._ds_test)]
+        for i, var in enumerate(variables):
+            for j, (mode, ds) in enumerate(datasets):
+                if var in ds:
+                    ds[var].plot(ax=axes[i, j])
+                    axes[i, j].set_title(f'{mode} {var}')
+                else:
+                    axes[i, j].set_title(f'{mode} {var} not found')
+                    axes[i, j].axis('off')        
+        plt.tight_layout()
+        plt.savefig(os.path.join(plot_dir, "features.png"))  #, dpi=300,bbox_inches='tight')
+        plt.close()
+        print("Plotted features", os.path.join(plot_dir, "features.png"))
+        fig, axes = plt.subplots(len(self.features), len(self.features), figsize=(18, 18))
+        for i in range(len(self.features)):
+            for j in range(i+1, len(self.features)):
+                visualization_utils.plot_single_scatter(axes[i,j], self._ds_train[self.features[i]].values, 
+                                                        self._ds_train[self.features[j]].values,
+                                                        x_label=self.features[i], y_label=self.features[j], 
+                                                        title=f'{self.features[i]} vs {self.features[j]}', should_align=False)
+        plt.savefig(os.path.join(plot_dir, "feat_correlations.png"))
+        plt.close()        
 
         # Random subset for low-data regime
         if subset_frac < 1.0:
@@ -217,7 +298,7 @@ class FluxData(LightningDataModule):
                 self._ds_valid,
                 **self._datakwargs),
             batch_size=self._batch_size,
-            shuffle=False,
+            shuffle=True,  # Shuffle since the plot function only uses one batch - we want it to be representative
             multiprocessing_context=get_context('loky'),  # github.com/pytorch/pytorch/issues/44687,
             **self._data_loader_kwargs
         )
@@ -229,7 +310,7 @@ class FluxData(LightningDataModule):
                 self._ds_test,
                 **self._datakwargs),
             batch_size=self._batch_size,
-            shuffle=False,
+            shuffle=True,
             multiprocessing_context=get_context('loky'),  # github.com/pytorch/pytorch/issues/44687
             **self._data_loader_kwargs
         )

@@ -18,6 +18,12 @@ import matplotlib.pyplot as plt
 
 from models.feedforward import FeedForward, SENN_Simple, robustness_loss
 
+sys.path.append('../')
+sys.path.append('../../')
+import visualization_utils
+import kan 
+from alibi.explainers import ALE, PartialDependenceVariance, plot_ale, plot_pd_variance
+
 
 
 
@@ -27,7 +33,8 @@ class Q10Model(pl.LightningModule):
             features: List[str],
             targets: List[str],
             norm: Normalize,
-            ds: xr.Dataset,
+            ds_train: xr.Dataset,
+            ds_val: xr.Dataset,
             ds_test: xr.Dataset,
             q10_init: int = 1.5,
             hidden_dim: int = 128,
@@ -37,7 +44,7 @@ class Q10Model(pl.LightningModule):
             lambda_jacobian_l1: float = 0.0,
             lambda_jacobian_l05: float = 0.0,
             # lambda_robustness: float = 0.0,
-            lambda_out_of_range: float = 0.0,
+            lambda_param_violation: float = 0.0,
             lambda_kan_l1: float = 1.0,
             lambda_kan_entropy: float = 2.0,
             lambda_kan_coefdiff: float = 1.0,
@@ -61,6 +68,7 @@ class Q10Model(pl.LightningModule):
 
         super().__init__()
 
+        self.train_step_outputs = []
         self.validation_step_outputs = []  # Needed to change validation_epoch_end to on_validation_epoch_end: https://github.com/Lightning-AI/pytorch-lightning/pull/16520
         self.test_step_outputs = []
         self.save_hyperparameters(
@@ -76,7 +84,7 @@ class Q10Model(pl.LightningModule):
             'lambda_jacobian_l1',
             'lambda_jacobian_l05',
             # 'lambda_robustness',
-            'lambda_out_of_range',
+            'lambda_param_violation',
             'lambda_kan_l1',
             'lambda_kan_entropy',
             'lambda_kan_coefdiff',
@@ -90,7 +98,7 @@ class Q10Model(pl.LightningModule):
             'rb_constraint'
         )
 
-        if lambda_out_of_range > 0:
+        if lambda_param_violation > 0:
             assert rb_constraint == "relu", "If out-of-range loss is set, rb_constraint must be relu"
 
         self.features = features
@@ -101,7 +109,7 @@ class Q10Model(pl.LightningModule):
         self.input_norm = norm.get_normalization_layer(variables=self.features, invert=False, stack=True)
 
         self.model = model
-        if model == 'nn':
+        if model in ['nn', 'pure_nn']:
             self.nn = FeedForward(
                 num_inputs=len(self.features),
                 num_outputs=len(self.targets),
@@ -121,13 +129,12 @@ class Q10Model(pl.LightningModule):
                 dropout_last=False,
                 activation=activation,
             )
-        elif model == 'kan':
+        elif model in ['kan', 'pure_kan']:
             layer_sizes = [len(self.features)] + [hidden_dim] * (num_layers - 1) + [len(self.targets)]
-            import kan 
             self.nn = kan.KAN(width=layer_sizes, grid=kan_grid, k=3, seed=42, device=self.device,  # residual=residual,
                                input_size=layer_sizes[0], noise_scale=kan_noise,
                                base_fun=kan_base_fun, affine_trainable=kan_affine_trainable, grid_eps=1.0, 
-                               grid_margin=kan_grid_margin)
+                               grid_margin=kan_grid_margin, drop_rate=dropout, drop_mode='postact')
         else:
             raise ValueError("Invalid model")
         print("MODEL", self.nn)
@@ -144,7 +151,8 @@ class Q10Model(pl.LightningModule):
         self.num_steps = num_steps
 
         # Used for strring results.
-        self.ds = ds
+        self.ds_train = ds_train
+        self.ds_val = ds_val
         self.ds_test = ds_test
 
         # Error if more than 100000 steps--ok here, but careful if you copy code for other projects!.
@@ -157,6 +165,8 @@ class Q10Model(pl.LightningModule):
         # Note that `x` is a dict of features and targets, input_norm extracts *only* features and stacks
         # them along last dimension.
         self.nn_input = self.input_norm(x)
+
+        # print("After input norm. Means", self.nn_input.mean(dim=0), "Stds", self.nn_input.std(dim=0))  #, "Min", self.nn_input.min(dim=0), "Max", self.nn_input.max(dim=0))
 
         # # # Debugging: see if the label really is what it should be
         # import math
@@ -171,6 +181,11 @@ class Q10Model(pl.LightningModule):
         # Forward pass through NN.
         self.nn_input.requires_grad = True
         z = self.nn(self.nn_input)
+
+        # Pure NN or Pure KAN - only return predicted Reco (set predicted Rb = Reco)
+        if self.model in ['pure_nn', 'pure_kan']:
+            self.rb = z
+            return z, z, None
 
         # No denormalization done currently.
         if self.hparams.rb_constraint == 'softplus':
@@ -271,14 +286,17 @@ class Q10Model(pl.LightningModule):
         if batch_idx == 1 and self.model == 'senn':
             print("COEFS", self.nn.coefs[0:5], self.nn.bias)
 
-        batch, _ = batch
+        batch, idx = batch
+
+        # print("TRAIN STEP: Unnormalized", [f"{var} mean {x.mean()} std {x.std()}" for var, x in batch.items()])
+        # print("TRAIN STEP: Normalized means", self.input_norm(batch).mean(dim=0), "stds", self.input_norm(batch).std(dim=0))
 
         # Update grid for KAN if desired
         if self.model == 'kan' and self.kan_update_grid == 1 and batch_idx == 1 and self.current_epoch < 10:
             self.nn.update_grid(self.input_norm(batch))
 
         # self(...) calls self.forward(...) with some extras. The `rb` is not needed here.
-        reco_hat, _, z = self(batch)
+        reco_hat, rb_hat, z = self(batch)
 
         # Calculate loss on normalized data.
         loss = self.criterion_normed(reco_hat, batch['reco'])
@@ -289,14 +307,18 @@ class Q10Model(pl.LightningModule):
         # Logging.
         self.log('train_loss', loss, prog_bar=True)  #on_step=False, on_epoch=True, prog_bar=False, logger=True)
         self.log('q10', self.q10, prog_bar=True)  # on_step=True, on_epoch=False, prog_bar=False, logger=True)
-        self.log('beta', self.beta, prog_bar=True)
+        # self.log('beta', self.beta, prog_bar=True)
         total_loss = loss
-        
+
         # Out-of-range loss
-        out_of_range_loss = torchf.relu(-z).sum()
-        if self.hparams.rb_constraint == "relu":
-            self.log('out_of_range_loss', out_of_range_loss, prog_bar=True)
-            total_loss += (self.hparams.lambda_out_of_range * out_of_range_loss)
+        if z is not None:
+            param_violation_loss = torchf.relu(-z).sum()
+            if self.hparams.rb_constraint == "relu":
+                self.log('param_violation_loss', param_violation_loss, prog_bar=True)
+                total_loss += (self.hparams.lambda_param_violation * param_violation_loss)
+        else:
+            assert self.model in ["pure_nn", "pure_kan"], "If unconstrained Rb is None, model must be pure_nn or pure_kan"
+            assert self.hparams.lambda_param_violation == 0, "If unconstrained Rb is None, lambda_param_violation must be 0"
 
         # Calculate Jacobian (derivative of Rb wrt inputs)
         jacobian = self.get_jacobian_grad_precomputed()  # [batch, n_inputs]
@@ -326,16 +348,24 @@ class Q10Model(pl.LightningModule):
             kan_l1_loss, kan_entropy_loss, kan_coef_loss, kan_coefdiff_loss, kan_coefdiff2_loss = self.nn.reg(reg_metric='edge_backward', lamb_l1=1., lamb_entropy=1., lamb_coef=1., lamb_coefdiff=1., return_indiv=True)
             if self.hparams.lambda_kan_l1 > 0:
                 self.log('kan_l1_loss', kan_l1_loss, prog_bar=True)
-                total_loss += (self.hparams.lambda_kan_l1 * kan_l1_loss)
+                new_lambda = self.hparams.lambda_kan_l1  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_l1  # max(0, self.hparams.lambda_kan_l1 * (self.current_epoch - 20))
+                total_loss += (new_lambda * kan_l1_loss)
+                # total_loss += (self.hparams.lambda_kan_l1 * kan_l1_loss)
             if self.hparams.lambda_kan_entropy > 0:
                 self.log('kan_entropy_loss', kan_entropy_loss, prog_bar=True)
-                total_loss += (self.hparams.lambda_kan_entropy * kan_entropy_loss)
+                new_lambda = self.hparams.lambda_kan_entropy  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_entropy   #max(0, self.hparams.lambda_kan_entropy * (self.current_epoch - 20))
+                total_loss += (new_lambda * kan_entropy_loss)
+                # total_loss += (self.hparams.lambda_kan_entropy * kan_entropy_loss)
             if self.hparams.lambda_kan_coefdiff > 0:
                 self.log('kan_coefdiff_loss', kan_coefdiff_loss, prog_bar=True)
-                total_loss += (self.hparams.lambda_kan_coefdiff * kan_coefdiff_loss)            
+                new_lambda = self.hparams.lambda_kan_coefdiff  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff   # max(0, self.hparams.lambda_kan_coefdiff * (self.current_epoch - 20))
+                total_loss += (new_lambda * kan_coefdiff_loss)
+                # total_loss += (self.hparams.lambda_kan_coefdiff * kan_coefdiff_loss)            
             if self.hparams.lambda_kan_coefdiff2 > 0:
                 self.log('kan_coefdiff2_loss', kan_coefdiff2_loss, prog_bar=True)
-                total_loss += (self.hparams.lambda_kan_coefdiff2 * kan_coefdiff2_loss)
+                new_lambda = self.hparams.lambda_kan_coefdiff2  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff2   # max(0, self.hparams.lambda_kan_coefdiff2 * (self.current_epoch - 20))
+                total_loss += (new_lambda * kan_coefdiff2_loss)
+                # total_loss += (self.hparams.lambda_kan_coefdiff2 * kan_coefdiff2_loss)
 
         # SENN robustness loss
         if self.model == "senn":
@@ -343,6 +373,9 @@ class Q10Model(pl.LightningModule):
             self.log('robustness_loss', r_loss, prog_bar=True)
             total_loss += self.hparams.lambda_robustness * r_loss
 
+        # This dict is available in `on_train_epoch_end` after saving to self.train_step_outputs.
+        outputs = {'reco_hat': reco_hat, 'rb_hat': rb_hat, 'idx': idx}
+        self.train_step_outputs.append(outputs)
         return total_loss
 
 
@@ -353,6 +386,9 @@ class Q10Model(pl.LightningModule):
 
         # Split batch (a dict) into actual data and the time-index returned by the dataset.
         batch, idx = batch
+
+        # print("VALIDATION STEP: Unnormalized", [f"{var} mean {x.mean()} std {x.std()}" for var, x in batch.items()])
+        # print("VALIDATION STEP: Normalized means", self.input_norm(batch).mean(dim=0), "stds", self.input_norm(batch).std(dim=0))
 
         # self(...) calls self.forward(...) with some extras. The `rb` is not needed here.
         reco_hat, rb_hat, _ = self(batch)
@@ -377,8 +413,33 @@ class Q10Model(pl.LightningModule):
         return self.nn.forward(X).cpu().numpy()
 
 
+    def on_train_epoch_end(self) -> None:
+        """
+        Plot true vs predicted values for training set. This helps assess the degree of overfitting.
+        """
+        # Iterate results from each train step.
+        for item in self.train_step_outputs:
+            reco_hat = item['reco_hat'][:, 0].detach().cpu()
+            rb_hat = item['rb_hat'][:, 0].detach().cpu()
+            idx = item['idx'].detach().cpu()
+
+            # Assign predictions to the right time steps.
+            self.ds_train['reco_pred'].values[self.current_epoch, idx] = reco_hat
+            self.ds_train['rb_pred'].values[self.current_epoch, idx] = rb_hat
+
+        if self.current_epoch % 10 == 9:
+            # True vs predicted scatters
+            print("Plotting to ", self.logger.log_dir)
+            y_hats = [self.ds_train['reco_pred'].values[self.current_epoch, :], self.ds_train['rb_pred'].values[self.current_epoch, :]]
+            ys = [self.ds_train['reco'].values, self.ds_train['rb'].values]
+            titles = ['R_eco (labeled)', 'R_b (latent)']
+            visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_true_vs_predicted_train.png"),
+                                                                y_hats=y_hats, ys=ys, titles=titles)
+        self.train_step_outputs.clear()  # free memory
+        print("\n")
+
+
     def on_validation_epoch_end(self) -> None:
-        print("Validation epoch end")
 
         # Iterate results from each validation step.
         for item in self.validation_step_outputs:
@@ -387,62 +448,66 @@ class Q10Model(pl.LightningModule):
             idx = item['idx'].cpu()
 
             # Assign predictions to the right time steps.
-            self.ds['reco_pred'].values[self.current_epoch, idx] = reco_hat
-            self.ds['rb_pred'].values[self.current_epoch, idx] = rb_hat
+            self.ds_val['reco_pred'].values[self.current_epoch, idx] = reco_hat
+            self.ds_val['rb_pred'].values[self.current_epoch, idx] = rb_hat
 
-        # Feature importance: using PDP Variance
-        from alibi.explainers import ALE, PartialDependenceVariance, plot_ale, plot_pd_variance
-        pd_variance = PartialDependenceVariance(predictor=self.predictor,
-                                feature_names=self.features,
-                                target_names=self.targets)
-        exp_importance = pd_variance.explain(X=self.nn_input.detach().cpu().numpy(), method='importance')
-        importance_scores = exp_importance.data['feature_importance'].flatten()
-        for feat_idx, feat in enumerate(self.features):
-            self.log(f'{feat}_importance', importance_scores[feat_idx], prog_bar=False, logger=True)
+        # Store nn_input in case the following methods change it
+        cached_nn_input = self.nn_input
 
-        if self.current_epoch % 25 == 24:
+        if self.current_epoch % 10 == 9:
             # True vs predicted scatters
-            sys.path.append('../')
-            sys.path.append('../../')
-            import visualization_utils
             print("Plotting to ", self.logger.log_dir)
-            y_hats = [self.ds['reco_pred'].values[self.current_epoch, :], self.ds['rb_pred'].values[self.current_epoch, :]]
-            ys = [self.ds['reco'].values, self.ds['rb'].values]
+            y_hats = [self.ds_val['reco_pred'].values[self.current_epoch, :], self.ds_val['rb_pred'].values[self.current_epoch, :]]
+            ys = [self.ds_val['reco'].values, self.ds_val['rb'].values]
             titles = ['R_eco (labeled)', 'R_b (latent)']
             visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_true_vs_predicted_val.png"),
                                                                 y_hats=y_hats, ys=ys, titles=titles)
 
-            # KAN plot
-            if self.model == "kan":
+            # KAN plot. Note this should go before other plots, since it relies on cached values from the last batch passed through the model
+            # (the below plots pass other non-representative data through the model)
+            if self.model in ["kan", "pure_kan"]:
+                out_vars = ["Rb"] if self.model == "kan" else ["Reco"]
                 self.nn.to(self.device)
                 self.nn.attribute()
                 self.nn.node_attribute()
 
                 # Plot the pruned model
                 pruned_model = self.nn.prune(node_th=0.03, edge_th=0.03)
-                pruned_model.plot(folder=os.path.join(self.logger.log_dir, "splines"), in_vars=self.features, out_vars=["Rb"])  #, scale=5, varscale=0.15)
+                pruned_model.plot(folder=os.path.join(self.logger.log_dir, "splines_pruned"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
                 plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_kan_plot_pruned.png"))
                 plt.close()
 
                 # Plot the unpruned model
-                self.nn.plot(folder=os.path.join(self.logger.log_dir, "splines"), in_vars=self.features, out_vars=["Rb"])  #, scale=5, varscale=0.15)
+                self.nn.plot(folder=os.path.join(self.logger.log_dir, "splines"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
                 plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_kan_plot.png"))
                 plt.close()
 
-            # Accumulated Local Effects plot (similar to partial dependence plot)
-            if self.model == "nn":
-                print("Plotting ale")
-                ale = ALE(self.predictor, feature_names=self.features, target_names=self.targets)
-                exp = ale.explain(self.nn_input.detach().cpu().numpy())
-                plot_ale(exp)
-                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_ale.png"))
-                plt.close()
+        # Feature importance: log PDP Variance scores
+        pd_variance = PartialDependenceVariance(predictor=self.predictor,
+                                feature_names=self.features,
+                                target_names=self.targets)
+        exp_importance = pd_variance.explain(cached_nn_input.detach().cpu().numpy(), method='importance')
+        importance_scores = exp_importance.data['feature_importance'].flatten()
+        for feat_idx, feat in enumerate(self.features):
+            self.log(f'{feat}_importance', importance_scores[feat_idx], prog_bar=False, logger=True)
 
+        if self.current_epoch % 10 == 9:
+            if self.model == "nn":
+                # Plot PDP variance
                 plot_pd_variance(exp=exp_importance)
                 plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_pd_variance.png"))
                 plt.close()
 
-        self.validation_step_outputs.clear()  # frree memory
+                # Accumulated Local Effects plot (similar to partial dependence plot
+                # but better with correlated features)
+                ale = ALE(self.predictor, feature_names=self.features, target_names=self.targets)
+                exp = ale.explain(cached_nn_input.detach().cpu().numpy())
+                plot_ale(exp)
+                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_ale.png"))
+                plt.close()
+
+        self.validation_step_outputs.clear()  # free memory
+        print("\n")
 
 
     def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> Dict[str, torch.Tensor]:
@@ -474,9 +539,6 @@ class Q10Model(pl.LightningModule):
         print("reco pred test", self.ds_test['reco_pred'].shape, self.ds_test['reco'].shape)
 
         # True vs predicted scatters
-        sys.path.append('../')
-        sys.path.append('../../')
-        import visualization_utils
         print("Plotting to ", self.logger.log_dir)
         y_hats = [self.ds_test['reco_pred'].values[self.current_epoch - 1, :], self.ds_test['rb_pred'].values[self.current_epoch - 1, :]]
         ys = [self.ds_test['reco'].values, self.ds_test['rb'].values]
@@ -520,13 +582,13 @@ class Q10Model(pl.LightningModule):
         parser.add_argument('--hidden_dim', type=int, default=16)
         parser.add_argument('--num_layers', type=int, default=2)
         parser.add_argument('--c', type=float, default=0.1)
-        parser.add_argument('--learning_rate', type=float, default=0.05)
-        parser.add_argument('--weight_decay', type=float, default=0.1)
-        parser.add_argument('--model', type=str, choices=['nn', 'senn', 'kan'], default='nn')
+        # parser.add_argument('--learning_rate', type=float, default=0.05)
+        # parser.add_argument('--weight_decay', type=float, default=0.1)
+        parser.add_argument('--model', type=str, choices=['nn', 'senn', 'kan', 'pure_nn', 'pure_kan'], default='nn')
         parser.add_argument('--rb_constraint', type=str, choices=['softplus', 'relu', 'none'], default='softplus',
                             help="""How to constrain Rb to be positive. softplus uses softplus function. relu uses
                                 a relu function, and none imposes no constraint. With relu or none, we advise using
-                                'lambda_out_of_range' to avoid vanishing gradients and softly encourage the constraint""")
+                                'lambda_param_violation' to avoid vanishing gradients and softly encourage the constraint""")
         return parser
 
 
@@ -547,7 +609,7 @@ class Q10Model(pl.LightningModule):
 #             lambda_jacobian_l1: float = 0.0,
 #             lambda_jacobian_l05: float = 0.0,
 #             lambda_robustness: float = 0.0,
-#             lambda_out_of_range: float = 0.0,
+#             lambda_param_violation: float = 0.0,
 #             dropout: float = 0.,
 #             activation: bool = 'relu',  # 'tanh',
 #             num_steps: int = 0,
@@ -573,7 +635,7 @@ class Q10Model(pl.LightningModule):
 #             'lambda_jacobian_l1',
 #             'lambda_jacobian_l05',
 #             'lambda_robustness',
-#             'lambda_out_of_range',
+#             'lambda_param_violation',
 #         )
 
 #         self.features = features
