@@ -30,24 +30,34 @@ class Objective(object):
         self.args = args
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
-        subset_frac = trial.suggest_float('subset_frac', 0.01, 1.0)
-        q10_init = trial.suggest_float('q10_init', 0.0001, 1000.)
-        seed = trial.suggest_int('seed', 0, 999999999999)
-        use_ta = trial.suggest_categorical('use_ta', [True, False])
-        dropout = trial.suggest_float('dropout', 0.0, 1.0)
-        lambda_out_of_range = trial.suggest_float('lambda_out_of_range', 0.0, 100.0)
-        lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 0.0, 2.0)
-        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 0.0, 4.0)
-        lambda_kan_coefdiff = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
-        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 0.0, 2.0)
-        kan_grid = trial.suggest_int('kan_grid', 3, 50)
-        kan_grid_margin = trial.suggest_float('kan_grid_margin', 0.0, 2.0)
-        kan_noise = trial.suggest_float('kan_noise', 0.1, 0.5)
-        kan_base_fun = trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
-        kan_affine_trainable = trial.suggest_categorical('kan_affine_trainable', [True, False])
-        kan_update_grid = trial.suggest_categorical('kan_update_grid', [0, 1])
-        lambda_jacobian_l1 = trial.suggest_float('lambda_jacobian_l1', 0.0, 100.0)
-        lambda_jacobian_l05 = trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
+        # FIXED hyperparameters
+        rb_synth = -2
+        reco_noise_std = 0.1
+        subset_frac = 1.0
+        q10_init = 0.5
+        seed = 0
+        use_ta = True
+        kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
+        kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
+        kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
+        kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
+        kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
+        kan_noise = 0.3  # trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
+        lambda_jacobian_l05 = 0.0  # trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
+
+        # Loss weights / model complexity
+        lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
+        lambda_kan_l1 = 0.0  # trial.suggest_float('lambda_kan_l1', 0.0, 1.0)
+        lambda_kan_entropy = 1e-2  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
+        lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
+        lambda_kan_coefdiff = 1e-3  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-2, log=True)
+        lambda_kan_coefdiff2 = 0.1  # trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-2, log=True)  #, log=True)
+        lambda_jacobian_l1 = 0.0  # trial.suggest_float('lambda_jacobian_l1', 0.0, 1.0)
+
+        # Optimization
+        learning_rate = 1e-2  # trial.suggest_float('learning_rate', 1e-3, 0.1, log=True)
+        weight_decay = 0.0  # trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
+        dropout = 0.0  # trial.suggest_float('dropout', 0.0, 0.5)
         # lambda_robustness = trial.suggest_float('lambda_robustness', 0.0, 100.0)
 
         if use_ta:
@@ -80,16 +90,20 @@ class Objective(object):
             valid_time=slice('2007-01-01', '2007-12-31'),
             test_time=slice('2008-01-01', '2008-12-31'),
             batch_size=self.args.batch_size,
-            data_loader_kwargs={'num_workers': 7, 'persistent_workers': True},  # persistent_workers=True necessary to avoid long pause between epochs https://github.com/Lightning-AI/pytorch-lightning/issues/10389 
-            subset_frac=subset_frac)
+            data_loader_kwargs={'num_workers': 2, 'persistent_workers': True},  # persistent_workers=True necessary to avoid long pause between epochs https://github.com/Lightning-AI/pytorch-lightning/issues/10389 
+            subset_frac=subset_frac,
+            rb_synth=rb_synth,
+            reco_noise_std=reco_noise_std,
+            plot_dir=self.args.log_dir)
 
         train_loader = fluxdata.train_dataloader()
         val_loader = fluxdata.val_dataloader()
         test_loader = fluxdata.test_dataloader()
 
-        # Create empty xr.Dataset, will be used by the model to save predictions every epoch.
+        # Create empty xr.Datasets, will be used by the model to save predictions every epoch.
         max_epochs = TRAINER_ARGS['max_epochs']
-        ds_pred = fluxdata.target_xr('valid', varnames=['reco', 'rb'], num_epochs=max_epochs)
+        ds_train = fluxdata.target_xr('train', varnames=['reco', 'rb'], num_epochs=max_epochs)
+        ds_val = fluxdata.target_xr('valid', varnames=['reco', 'rb'], num_epochs=max_epochs)
         ds_test = fluxdata.target_xr('test', varnames=['reco', 'rb'], num_epochs=max_epochs)
 
         # ------------
@@ -99,17 +113,19 @@ class Objective(object):
             features=features,
             targets=targets,
             norm=fluxdata._norm,
-            ds=ds_pred,
+            ds_train=ds_train,
+            ds_val=ds_val,
             ds_test=ds_test,
             q10_init=q10_init,
             hidden_dim=self.args.hidden_dim,
             num_layers=self.args.num_layers,
-            learning_rate=self.args.learning_rate,
+            learning_rate=learning_rate,
             dropout=dropout,
-            weight_decay=self.args.weight_decay,
-            lambda_out_of_range=lambda_out_of_range,
+            weight_decay=weight_decay,
+            lambda_param_violation=lambda_param_violation,
             lambda_kan_l1=lambda_kan_l1,
             lambda_kan_entropy=lambda_kan_entropy,
+            lambda_kan_node_entropy=lambda_kan_node_entropy,
             lambda_kan_coefdiff=lambda_kan_coefdiff,
             lambda_kan_coefdiff2=lambda_kan_coefdiff2,
             lambda_jacobian_l1=lambda_jacobian_l1,
@@ -162,7 +178,7 @@ class Objective(object):
         # save results
         # ------------
         # Store predictions.
-        ds = fluxdata.add_scalar_record(model.ds, varname='q10', x=model.q10_history)
+        ds = fluxdata.add_scalar_record(model.ds_val, varname='q10', x=model.q10_history)
         trial.set_user_attr('q10', ds.q10[-1].item())
 
         # Add some attributes that are required for analysis.
@@ -218,31 +234,33 @@ def main(parser: ArgumentParser = None, **kwargs):
     for k, v in globargs.items():
         setattr(args, k, v)
 
-    # ------------
-    # study setup
-    # ------------
-    search_space = {
-        'subset_frac': [1.0],
-        'q10_init': [0.5],  # [0.5, 1.5, 2.5],
-        'seed': [0] if args.single_seed else [i for i in range(10)],
-        'dropout': [0.0],  # , 0.2, 0.4, 0.6],
-        'use_ta': [True],  # [True, False]
-        'lambda_out_of_range': [0.0],  # [1.0],
-        'lambda_kan_l1': [0.0],  # = trial.suggest_float('lambda_kan_l1', 0.0, 2.0)
-        'lambda_kan_entropy': [0.0],  # = trial.suggest_float('lambda_kan_entropy', 0.0, 4.0)
-        'lambda_kan_coefdiff': [0.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
-        'lambda_kan_coefdiff2': [1.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
-        'kan_grid': [3],  #trial.suggest_int('kan_grid', 3, 50)
-        'kan_update_grid': [1],
-        'kan_grid_margin': [1.0],  # = trial.suggest_float('kan_grid_margin', 0.0, 2.0)
-        'kan_noise': [0.3],  # = trial.suggest_float('kan_noise', 0.1, 0.5)
-        'kan_base_fun': ['zero'],  # = trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity'])
-        'kan_affine_trainable': [True],  # = trial.suggest_categorical('kan_affine_trainable', [True, False])
-        'lambda_jacobian_l1': [0],  #  [0.001, 0.01, 0.1, 1.0, 10.0]
-        'lambda_jacobian_l05': [0],
-        # 'lambda_robustness': [0],
-    }
+    # # ------------
+    # # study setup
+    # # ------------
+    # search_space = {
+    #     'subset_frac': [1.0],
+    #     'q10_init': [0.5],  # [0.5, 1.5, 2.5],
+    #     'seed': [0] if args.single_seed else [i for i in range(10)],
+    #     'dropout': [0.0],  # , 0.2, 0.4, 0.6],
+    #     'use_ta': [True],  # [True, False]
+    #     'lambda_param_violation': [1.0],  # [1.0],
+    #     'lambda_kan_l1': [0.0],  # = trial.suggest_float('lambda_kan_l1', 0.0, 2.0)
+    #     'lambda_kan_entropy': [0.1],  # = trial.suggest_float('lambda_kan_entropy', 0.0, 4.0)
+    #     'lambda_kan_coefdiff': [0.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
+    #     'lambda_kan_coefdiff2': [0.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
+    #     'kan_grid': [3],  #trial.suggest_int('kan_grid', 3, 50)
+    #     'kan_update_grid': [1],
+    #     'kan_grid_margin': [1.0],  # = trial.suggest_float('kan_grid_margin', 0.0, 2.0)
+    #     'kan_noise': [0.3],  # = trial.suggest_float('kan_noise', 0.1, 0.5)
+    #     'kan_base_fun': ['silu_identity'],  # = trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity'])
+    #     'kan_affine_trainable': [True],  # = trial.suggest_categorical('kan_affine_trainable', [True, False])
+    #     'lambda_jacobian_l1': [0.1],  #  [0.001, 0.01, 0.1, 1.0, 10.0]
+    #     'lambda_jacobian_l05': [0],
+    #     # 'lambda_robustness': [0],
+    # }
 
+    # Modify log_dir
+    args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'
     sql_file = os.path.abspath(os.path.join(args.log_dir, "optuna.db"))
     sql_path = f'sqlite:///{sql_file}'
 
@@ -251,9 +269,9 @@ def main(parser: ArgumentParser = None, **kwargs):
             shutil.rmtree(args.log_dir)
         os.makedirs(args.log_dir, exist_ok=True)
         study = optuna.create_study(
-            study_name="q10hybrid",
+            study_name=os.path.basename(args.log_dir),
             storage=sql_path,
-            sampler=optuna.samplers.GridSampler(search_space),
+            sampler=optuna.samplers.GPSampler(seed=42),  # optuna.samplers.GridSampler(search_space),
             direction='minimize',
             load_if_exists=False)
 
@@ -266,13 +284,14 @@ def main(parser: ArgumentParser = None, **kwargs):
     # ------------
     # run study
     # ------------
-    n_trials = 1
-    for _, v in search_space.items():
-        n_trials *= len(v)
+    # n_trials = 1
+    # for _, v in search_space.items():
+    #     n_trials *= len(v)
+    n_trials = 20
     study = optuna.load_study(
-        study_name="q10hybrid",
+        study_name=os.path.basename(args.log_dir),
         storage=sql_path,
-        sampler=optuna.samplers.GridSampler(search_space))
+        sampler=optuna.samplers.GPSampler(seed=42))  # optuna.samplers.GridSampler(search_space))
     study.optimize(Objective(args), n_trials=n_trials)
 
 

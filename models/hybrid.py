@@ -47,6 +47,7 @@ class Q10Model(pl.LightningModule):
             lambda_param_violation: float = 0.0,
             lambda_kan_l1: float = 1.0,
             lambda_kan_entropy: float = 2.0,
+            lambda_kan_node_entropy: float = 0.0,
             lambda_kan_coefdiff: float = 1.0,
             lambda_kan_coefdiff2: float = 1.0,
             kan_grid: int = 3,
@@ -87,6 +88,7 @@ class Q10Model(pl.LightningModule):
             'lambda_param_violation',
             'lambda_kan_l1',
             'lambda_kan_entropy',
+            'lambda_kan_node_entropy',
             'lambda_kan_coefdiff',
             'lambda_kan_coefdiff2',
             'kan_grid',
@@ -131,6 +133,9 @@ class Q10Model(pl.LightningModule):
             )
         elif model in ['kan', 'pure_kan']:
             layer_sizes = [len(self.features)] + [hidden_dim] * (num_layers - 1) + [len(self.targets)]
+            
+            # Version with mult nodes
+            # layer_sizes = [len(self.features)] + [[hidden_dim // 2, hidden_dim // 2]] * (num_layers - 1) + [len(self.targets)]
             self.nn = kan.KAN(width=layer_sizes, grid=kan_grid, k=3, seed=42, device=self.device,  # residual=residual,
                                input_size=layer_sizes[0], noise_scale=kan_noise,
                                base_fun=kan_base_fun, affine_trainable=kan_affine_trainable, grid_eps=1.0, 
@@ -184,8 +189,8 @@ class Q10Model(pl.LightningModule):
 
         # Pure NN or Pure KAN - only return predicted Reco (set predicted Rb = Reco)
         if self.model in ['pure_nn', 'pure_kan']:
-            self.rb = z
-            return z, z, None
+            self.rb = self.target_denorm(z).unsqueeze(1)  # z had shape [batch, 1]. target_denorm removed the last dim, so add it back.
+            return self.rb, self.rb, None
 
         # No denormalization done currently.
         if self.hparams.rb_constraint == 'softplus':
@@ -342,10 +347,11 @@ class Q10Model(pl.LightningModule):
             total_loss += (self.hparams.lambda_jacobian_05 * jacobian_l05_loss)
 
         # KAN-related losses
-        if self.model == "kan":
+        if self.model in ["kan", "pure_kan"]:
             # NOTE: the lamb values passed are completely unused, as we directly obtain the individual loss components and weight them later.
             # For default weights see https://github.com/KindXiaoming/pykan/blob/master/kan/MultKAN.py#L1411
             kan_l1_loss, kan_entropy_loss, kan_coef_loss, kan_coefdiff_loss, kan_coefdiff2_loss = self.nn.reg(reg_metric='edge_backward', lamb_l1=1., lamb_entropy=1., lamb_coef=1., lamb_coefdiff=1., return_indiv=True)
+            _, kan_node_entropy_loss, _, _, _ = self.nn.reg(reg_metric='node_influence_on_output', lamb_l1=0, lamb_entropy=1., lamb_coef=0., lamb_coefdiff=0., return_indiv=True)
             if self.hparams.lambda_kan_l1 > 0:
                 self.log('kan_l1_loss', kan_l1_loss, prog_bar=True)
                 new_lambda = self.hparams.lambda_kan_l1  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_l1  # max(0, self.hparams.lambda_kan_l1 * (self.current_epoch - 20))
@@ -356,6 +362,10 @@ class Q10Model(pl.LightningModule):
                 new_lambda = self.hparams.lambda_kan_entropy  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_entropy   #max(0, self.hparams.lambda_kan_entropy * (self.current_epoch - 20))
                 total_loss += (new_lambda * kan_entropy_loss)
                 # total_loss += (self.hparams.lambda_kan_entropy * kan_entropy_loss)
+            if self.hparams.lambda_kan_node_entropy > 0:
+                self.log('lambda_kan_node_entropy', kan_node_entropy_loss, prog_bar=True)
+                new_lambda = self.hparams.lambda_kan_node_entropy
+                total_loss += (new_lambda * kan_node_entropy_loss)
             if self.hparams.lambda_kan_coefdiff > 0:
                 self.log('kan_coefdiff_loss', kan_coefdiff_loss, prog_bar=True)
                 new_lambda = self.hparams.lambda_kan_coefdiff  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff   # max(0, self.hparams.lambda_kan_coefdiff * (self.current_epoch - 20))
@@ -473,6 +483,7 @@ class Q10Model(pl.LightningModule):
 
                 # Plot the pruned model
                 pruned_model = self.nn.prune(node_th=0.03, edge_th=0.03)
+                # pruned_model.auto_swap()  # swap neurons to make it simpler? 
                 pruned_model.plot(folder=os.path.join(self.logger.log_dir, "splines_pruned"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
                 plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_kan_plot_pruned.png"))
                 plt.close()

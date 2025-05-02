@@ -173,15 +173,22 @@ class FluxData(LightningDataModule):
         # plt.savefig(os.path.join(plot_dir, "reco_synth_paper.png"))
         # plt.close()
 
-        if rb_synth != 0 and rb_synth != -1:
+        if rb_synth not in [0, -1, -2]:
             if rb_synth == 1:
                 ds["rb"] = (ds["dsw_pot_norm"] - 0.5) ** 2
             elif rb_synth == 2:
                 ds["rb"] = (ds["sw_pot_norm"] - 0.5) ** 2 + (ds["dsw_pot_norm"] - 0.5) ** 2
             elif rb_synth == 3:
                 ds["rb"] = np.minimum(0.3, np.maximum(0, ds["sw_pot_norm"] - 0.4)) - np.minimum(0.3, np.maximum(0, ds["dsw_pot_norm"] - 0.4))
+            elif rb_synth == 4:
+                temp = ds["sw_pot_norm"] - ds["dsw_pot_norm"] 
+                ds["rb"] = np.log(temp - temp.min() + 0.1)
+            elif rb_synth == 6:
+                old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
+                print("Min of old rb", old_rb.min())
+                ds["rb"] = ((old_rb - old_rb.mean()) / old_rb.std()) **2
             else:
-                raise ValueError(f"rb_synth must be 0, 1, 2, or 3. Got {rb_synth}.")
+                raise ValueError(f"rb_synth must be -2, -1, 0, 1, 2, or 3. Got {rb_synth}.")
 
             # TODO Not sure where the true q10 is set, hardcoding to 1.5 for now.
             ds["rb"] = ds["rb"] - ds["rb"].min() + 0.1  # Require non-negativity
@@ -208,8 +215,13 @@ class FluxData(LightningDataModule):
 
         # If rb_synth is -1, remove high Reco values from the training data
         if rb_synth == -1:
-            reco_quantile_90 = np.quantile(self._ds_train["reco"].values, 0.9)
-            self._ds_train = self._ds_train.where(self._ds_train["reco"] <= reco_quantile_90, drop=True)
+            reco_thresh = np.quantile(self._ds_train["reco"].values, 0.8)
+            self._ds_train = self._ds_train.where(self._ds_train["reco"] <= reco_thresh, drop=True)
+
+        # If rb_synth is -2, remove high Rb values from the training data
+        if rb_synth == -2:
+            rb_thresh = np.quantile(self._ds_train["rb"].values, 0.5)
+            self._ds_train = self._ds_train.where(self._ds_train["rb"] <= rb_thresh, drop=True)
 
         # Visualizations
         import os

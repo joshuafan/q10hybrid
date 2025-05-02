@@ -2,11 +2,15 @@
 Removing top 10% of reco from train set
 
 # Hybrid only
-python experiments/20250430_extrapolate_purenn.py --model pure_nn --num_layers 2
+python experiments/20250430_extrapolate_purenn.py --model nn --rb_constraint softplus --num_layers 2
+python experiments/20250430_extrapolate_purenn.py --model kan --rb_constraint relu --num_layers 1
 
 # Our approach
 python experiments/20250430_extrapolate_purenn.py --model kan --rb_constraint relu --num_layers 1
+python experiments/20250430_extrapolate_purenn.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 6
 
+# Pure-KAN
+python experiments/20250430_extrapolate_purenn.py --model pure_kan --num_layers 2 --hidden_dim 8
 
 """
 
@@ -43,40 +47,33 @@ class Objective(object):
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
         # FIXED hyperparameters
-        rb_synth = -1
+        rb_synth = 6
         reco_noise_std = 0.1
         subset_frac = 1.0
         q10_init = 0.5
         seed = 0
         use_ta = True
-        # dropout = 0.0
-        kan_base_fun = 'silu_identity'
-        kan_affine_trainable = True
-        kan_grid = 30
-        kan_grid_margin = 1.0
-        kan_update_grid = 1
-        kan_noise = 0.3
-        lambda_jacobian_l05 = 0.0
+        kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
+        kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
+        kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
+        kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
+        kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
+        kan_noise = 0.3  # trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
+        lambda_jacobian_l05 = 0.0  # trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
 
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
         lambda_kan_l1 = 0.0  # trial.suggest_float('lambda_kan_l1', 0.0, 1.0)
-        lambda_kan_entropy = 1e-2  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
-        lambda_kan_coefdiff = 1e-3  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-2, log=True)
-        lambda_kan_coefdiff2 = 1e-3  # trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-2, log=True)  #, log=True)
+        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-2, 1, log=True)
+        lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
+        lambda_kan_coefdiff = trial.suggest_float('lambda_kan_coefdiff', 1e-4, 1e-2, log=True)
+        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-4, 1e-2, log=True)  #, log=True)
         lambda_jacobian_l1 = 0.0  # trial.suggest_float('lambda_jacobian_l1', 0.0, 1.0)
 
         # Optimization
-        learning_rate = 1e-2  # trial.suggest_float('learning_rate', 1e-3, 0.1, log=True)
+        learning_rate = trial.suggest_float('learning_rate', 1e-2, 0.1, log=True)
         weight_decay = 0.0  # trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
         dropout = 0.0  # trial.suggest_float('dropout', 0.0, 0.5)
-        # kan_base_fun = trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
-        # kan_affine_trainable = trial.suggest_categorical('kan_affine_trainable', [True, False])
-        # kan_grid = trial.suggest_int('kan_grid', 3, 50)
-        # kan_grid_margin = trial.suggest_float('kan_grid_margin', 0.0, 2.0)
-        # kan_update_grid = trial.suggest_categorical('kan_update_grid', [0, 1])
-        # kan_noise = trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
-        # lambda_jacobian_l05 = trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
         # lambda_robustness = trial.suggest_float('lambda_robustness', 0.0, 100.0)
 
         if use_ta:
@@ -144,6 +141,7 @@ class Objective(object):
             lambda_param_violation=lambda_param_violation,
             lambda_kan_l1=lambda_kan_l1,
             lambda_kan_entropy=lambda_kan_entropy,
+            lambda_kan_node_entropy=lambda_kan_node_entropy,
             lambda_kan_coefdiff=lambda_kan_coefdiff,
             lambda_kan_coefdiff2=lambda_kan_coefdiff2,
             lambda_jacobian_l1=lambda_jacobian_l1,
@@ -173,7 +171,7 @@ class Objective(object):
                 EarlyStopping(
                     monitor='valid_loss',
                     patience=10,
-                    min_delta=0.00001),  # TODO!
+                    min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',
                     save_top_k=1,
@@ -226,7 +224,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250430_extrapolate_kan/', type=str)
+            '--log_dir', default='./logs/20250430_synth6', type=str)
         return parser
 
 
@@ -277,9 +275,10 @@ def main(parser: ArgumentParser = None, **kwargs):
     #     # 'lambda_robustness': [0],
     # }
 
+    # Modify log_dir
+    args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'
     sql_file = os.path.abspath(os.path.join(args.log_dir, "optuna.db"))
     sql_path = f'sqlite:///{sql_file}'
-    print("study name:", os.path.basename(args.log_dir))
 
     if args.create_study | (not os.path.isfile(sql_file)):
         if os.path.isdir(args.log_dir):
@@ -288,7 +287,7 @@ def main(parser: ArgumentParser = None, **kwargs):
         study = optuna.create_study(
             study_name=os.path.basename(args.log_dir),
             storage=sql_path,
-            sampler=optuna.samplers.GPSampler(seed=42),
+            sampler=optuna.samplers.GPSampler(seed=42),  # optuna.samplers.GridSampler(search_space),
             direction='minimize',
             load_if_exists=False)
 
@@ -301,11 +300,14 @@ def main(parser: ArgumentParser = None, **kwargs):
     # ------------
     # run study
     # ------------
-    n_trials = 1
+    # n_trials = 1
+    # for _, v in search_space.items():
+    #     n_trials *= len(v)
+    n_trials = 20
     study = optuna.load_study(
         study_name=os.path.basename(args.log_dir),
         storage=sql_path,
-        sampler=optuna.samplers.GPSampler(seed=42))  # (search_space))
+        sampler=optuna.samplers.GPSampler(seed=42))  # optuna.samplers.GridSampler(search_space))
     study.optimize(Objective(args), n_trials=n_trials)
 
 
