@@ -1,15 +1,18 @@
 """
-Removing top 10% of reco from train set
+Removing top 20% of ta from train set, and adding a nonlinear transform on top of Rb.
+This is supposed to demonstrate the necessity of having 2-layer KAN
+
+# pure NN
+python experiments/20250502_relu.py --model pure_nn --num_layers 2
+
 
 # Hybrid only (Reichstein et al)
-python experiments/20250430_extrapolate_purenn.py --model nn --rb_constraint softplus --num_layers 2
+python experiments/20250502_relu.py --model nn --rb_constraint softplus --num_layers 2
 
 # Our approach
-python experiments/20250430_extrapolate_purenn.py --model kan --rb_constraint relu --num_layers 1
-python experiments/20250430_extrapolate_purenn.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 6
+python experiments/20250502_relu.py --model kan --rb_constraint relu --num_layers 1
+python experiments/20250502_relu.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 6
 
-# Pure-KAN
-python experiments/20250430_extrapolate_purenn.py --model pure_kan --num_layers 2 --hidden_dim 8
 
 """
 
@@ -46,13 +49,15 @@ class Objective(object):
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
         # FIXED hyperparameters
-        rb_synth = 6
+        rb_synth = 7
+        remove_high = "ta"
+        remove_high_frac = 0.2
         reco_noise_std = 0.1
         subset_frac = 1.0
         q10_init = 0.5
         seed = 0
         use_ta = True
-        kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
+        kan_base_fun = 'zero'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
         kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
@@ -63,10 +68,10 @@ class Objective(object):
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
         lambda_kan_l1 = 0.0  # trial.suggest_float('lambda_kan_l1', 0.0, 1.0)
-        lambda_kan_entropy = 0.0  #trial.suggest_float('lambda_kan_entropy', 1e-2, 1, log=True)
+        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1, log=True)
         lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
-        lambda_kan_coefdiff = 0.0 #trial.suggest_float('lambda_kan_coefdiff', 1e-4, 1e-2, log=True)
-        lambda_kan_coefdiff2 = 0.0 # trial.suggest_float('lambda_kan_coefdiff2', 1e-4, 1e-2, log=True)  #, log=True)
+        lambda_kan_coefdiff = trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
+        lambda_kan_coefdiff2 = lambda_kan_coefdiff  # lambda_kan_coefdiff  # trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1, log=True)  #, log=True)
         lambda_jacobian_l1 = 0.0  # trial.suggest_float('lambda_jacobian_l1', 0.0, 1.0)
 
         # Optimization
@@ -108,6 +113,8 @@ class Objective(object):
             data_loader_kwargs={'num_workers': 2, 'persistent_workers': True},  # persistent_workers=True necessary to avoid long pause between epochs https://github.com/Lightning-AI/pytorch-lightning/issues/10389 
             subset_frac=subset_frac,
             rb_synth=rb_synth,
+            remove_high=remove_high,
+            remove_high_frac=remove_high_frac,
             reco_noise_std=reco_noise_std,
             plot_dir=self.args.log_dir)
 
@@ -223,7 +230,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250430_synth6', type=str)
+            '--log_dir', default='./logs/20250502_relu', type=str)
         return parser
 
 
@@ -273,10 +280,22 @@ def main(parser: ArgumentParser = None, **kwargs):
     #     'lambda_jacobian_l05': [0],
     #     # 'lambda_robustness': [0],
     # }
-    search_space = {
-        'learning_rate': [1e-4, 1e-3, 1e-2, 1e-1],
-        'weight_decay': [0, 1e-4, 1e-3],
-    }
+
+    # Search spaces
+    if args.model in ["nn", "pure_nn"]:
+        search_space = {
+            'learning_rate': [1e-3, 1e-2, 1e-1],
+            'weight_decay': [1e-6, 1e-4, 1e-3],
+            'lambda_kan_entropy': [1e-10],
+            'lambda_kan_coefdiff': [1e-10],
+        }
+    elif args.model == "kan":
+        search_space = {
+            'learning_rate': [1e-3, 1e-2, 1e-1],
+            'weight_decay': [1e-4],
+            'lambda_kan_entropy': [1e-3, 1e-2, 1e-1],
+            'lambda_kan_coefdiff': [1e-3, 1e-2, 1e-1],
+        }
 
     # Modify log_dir
     args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'

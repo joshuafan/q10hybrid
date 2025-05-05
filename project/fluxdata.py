@@ -128,6 +128,9 @@ class FluxData(LightningDataModule):
             data_loader_kwargs: Dict = {},
             subset_frac: float = 1.0,
             rb_synth: int = 0,
+            remove_high: str = "none",
+            remove_high_frac: str = 0.0,
+            train_set: int = 0,
             reco_noise_std: float = 0.0,
             plot_dir: str = "./") -> None:
 
@@ -173,26 +176,32 @@ class FluxData(LightningDataModule):
         # plt.savefig(os.path.join(plot_dir, "reco_synth_paper.png"))
         # plt.close()
 
-        if rb_synth not in [0, -1, -2]:
-            if rb_synth == 1:
-                ds["rb"] = (ds["dsw_pot_norm"] - 0.5) ** 2
-            elif rb_synth == 2:
-                ds["rb"] = (ds["sw_pot_norm"] - 0.5) ** 2 + (ds["dsw_pot_norm"] - 0.5) ** 2
-            elif rb_synth == 3:
-                ds["rb"] = np.minimum(0.3, np.maximum(0, ds["sw_pot_norm"] - 0.4)) - np.minimum(0.3, np.maximum(0, ds["dsw_pot_norm"] - 0.4))
-            elif rb_synth == 4:
-                temp = ds["sw_pot_norm"] - ds["dsw_pot_norm"] 
-                ds["rb"] = np.log(temp - temp.min() + 0.1)
-            elif rb_synth == 6:
-                old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
-                print("Min of old rb", old_rb.min())
-                ds["rb"] = ((old_rb - old_rb.mean()) / old_rb.std()) **2
-            else:
-                raise ValueError(f"rb_synth must be -2, -1, 0, 1, 2, or 3. Got {rb_synth}.")
 
-            # TODO Not sure where the true q10 is set, hardcoding to 1.5 for now.
-            ds["rb"] = ds["rb"] - ds["rb"].min() + 0.1  # Require non-negativity
-            ds["reco"] = ds["rb"] * (1.5 **(0.1 * (ds['ta'] - 15)))
+        if rb_synth == 1:
+            ds["rb"] = (ds["dsw_pot_norm"] - 0.5) ** 2
+        elif rb_synth == 2:
+            ds["rb"] = (ds["sw_pot_norm"] - 0.5) ** 2 + (ds["dsw_pot_norm"] - 0.5) ** 2
+        elif rb_synth == 3:
+            ds["rb"] = np.minimum(0.3, np.maximum(0, ds["sw_pot_norm"] - 0.4)) - np.minimum(0.3, np.maximum(0, ds["dsw_pot_norm"] - 0.4))
+        elif rb_synth == 4:
+            temp = ds["sw_pot_norm"] - ds["dsw_pot_norm"] 
+            ds["rb"] = np.log(temp - temp.min() + 0.1)
+        elif rb_synth == 6:
+            old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
+            print("Min of old rb", old_rb.min())
+            ds["rb"] = ((old_rb - old_rb.mean()) / old_rb.std()) **2
+        elif rb_synth == 7:  # Inverse relu
+            old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
+            print("Min of old rb", old_rb.min())
+            ds["rb"] = np.minimum((old_rb - old_rb.mean()) / old_rb.std(), 0)
+        elif rb_synth == 0:
+            pass
+        else:
+            raise ValueError(f"Invalid value of rb_synth, should be integer between [0, 7]. Got {rb_synth}.")
+
+        # TODO Not sure where the true q10 is set, hardcoding to 1.5 for now.
+        ds["rb"] = ds["rb"] - ds["rb"].min() + 0.1  # Require non-negativity
+        ds["reco"] = ds["rb"] * (1.5 **(0.1 * (ds['ta'] - 15)))
 
         # Add noise
         if reco_noise_std > 0.0:
@@ -213,15 +222,21 @@ class FluxData(LightningDataModule):
         self._ds_valid = self._ds.sel(time=self._valid_time).load()
         self._ds_test = self._ds.sel(time=self._test_time).load()
 
-        # If rb_synth is -1, remove high Reco values from the training data
-        if rb_synth == -1:
-            reco_thresh = np.quantile(self._ds_train["reco"].values, 0.8)
+        # If we want to test extrapolation, remove high values of (reco, rb, or ta)
+        # from the training data.
+        if remove_high == "reco":
+            reco_thresh = np.quantile(self._ds_train["reco"].values, 1 - remove_high_frac)
             self._ds_train = self._ds_train.where(self._ds_train["reco"] <= reco_thresh, drop=True)
-
-        # If rb_synth is -2, remove high Rb values from the training data
-        if rb_synth == -2:
-            rb_thresh = np.quantile(self._ds_train["rb"].values, 0.5)
+        elif remove_high == "rb":
+            rb_thresh = np.quantile(self._ds_train["rb"].values, 1 - remove_high_frac)
             self._ds_train = self._ds_train.where(self._ds_train["rb"] <= rb_thresh, drop=True)
+        elif remove_high == "ta":
+            ta_thresh = np.quantile(self._ds_train["ta"].values, 1 - remove_high_frac)
+            self._ds_train = self._ds_train.where(self._ds_train["ta"] <= ta_thresh, drop=True)
+        elif remove_high == "none":
+            pass
+        else:
+            raise ValueError("Invalid value of remove_high. Must be 'reco', 'rb', 'ta', or 'none'.")
 
         # Visualizations
         import os

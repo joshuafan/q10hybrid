@@ -592,6 +592,7 @@ class Q10Model(pl.LightningModule):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
         parser.add_argument('--hidden_dim', type=int, default=16)
         parser.add_argument('--num_layers', type=int, default=2)
+        parser.add_argument('--kan_grid', type=int, default=30)
         parser.add_argument('--c', type=float, default=0.1)
         # parser.add_argument('--learning_rate', type=float, default=0.05)
         # parser.add_argument('--weight_decay', type=float, default=0.1)
