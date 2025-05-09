@@ -10,9 +10,9 @@ import numpy as np
 from typing import List, Tuple, Dict, Union, Iterable
 
 from joblib.externals.loky.backend.context import get_context
-
+import warnings
 from utils.data_utils import Normalize
-
+import kan
 
 class FDataset(Dataset):
     """Fluxnet site data.
@@ -177,33 +177,131 @@ class FluxData(LightningDataModule):
         # plt.close()
 
 
-        if rb_synth == 1:
-            ds["rb"] = (ds["dsw_pot_norm"] - 0.5) ** 2
-        elif rb_synth == 2:
-            ds["rb"] = (ds["sw_pot_norm"] - 0.5) ** 2 + (ds["dsw_pot_norm"] - 0.5) ** 2
-        elif rb_synth == 3:
-            ds["rb"] = np.minimum(0.3, np.maximum(0, ds["sw_pot_norm"] - 0.4)) - np.minimum(0.3, np.maximum(0, ds["dsw_pot_norm"] - 0.4))
-        elif rb_synth == 4:
-            temp = ds["sw_pot_norm"] - ds["dsw_pot_norm"] 
-            ds["rb"] = np.log(temp - temp.min() + 0.1)
-        elif rb_synth == 6:
-            old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
-            print("Min of old rb", old_rb.min())
-            ds["rb"] = ((old_rb - old_rb.mean()) / old_rb.std()) **2
-        elif rb_synth == 7:  # Inverse relu
-            old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
-            print("Min of old rb", old_rb.min())
-            ds["rb"] = np.minimum((old_rb - old_rb.mean()) / old_rb.std(), 0)
-        elif rb_synth == 0:
-            pass
+        if rb_synth != 0:
+            if rb_synth == 1:
+                ds["rb"] = (ds["dsw_pot_norm"] - 0.5) ** 2
+            elif rb_synth == 2:
+                ds["rb"] = (ds["sw_pot_norm"] - 0.5) ** 2 + (ds["dsw_pot_norm"] - 0.5) ** 2
+            elif rb_synth == 3:
+                ds["rb"] = np.minimum(0.3, np.maximum(0, ds["sw_pot_norm"] - 0.4)) - np.minimum(0.3, np.maximum(0, ds["dsw_pot_norm"] - 0.4))
+            elif rb_synth == 4:
+                temp = ds["sw_pot_norm"] - ds["dsw_pot_norm"] 
+                ds["rb"] = np.log(temp - temp.min() + 0.1)
+            elif rb_synth == 6:
+                old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
+                print("Min of old rb", old_rb.min())
+                ds["rb"] = ((old_rb - old_rb.mean()) / old_rb.std()) **2
+            elif rb_synth == 7:  # Inverse relu
+                old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]   # + 1.03506858
+                print("Min of old rb", old_rb.min())
+                ds["rb"] = np.minimum((old_rb - old_rb.mean()) / old_rb.std(), 0)
+            elif rb_synth == 8:
+                # linear followed by abs
+                old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]
+                ds["rb"] = np.abs((old_rb - old_rb.mean().item()) / old_rb.std().item())
+                mean_val, std_val = old_rb.mean().item(), old_rb.std().item()
+
+                # construct true KAN for true feature importance
+                true_kan = kan.KAN(width=[len(features), 1, len(targets)], device="cpu", base_fun="identity")
+
+                # set mask to 0 to ignore spline (learnable) portion and use symbolic only
+                true_kan.act_fun[0].mask = torch.zeros_like(true_kan.act_fun[0].mask)
+                true_kan.act_fun[1].mask = torch.zeros_like(true_kan.act_fun[1].mask)
+                true_kan.save_acts = True
+                def f1(x):
+                    return 0.0075*x
+                def f2(x):
+                    return -0.00375*x
+                def f3(x):
+                    return ((x - mean_val) / std_val).abs()
+                true_kan.fix_symbolic(0, 0, 0, fun_name=f1, random=False, fit_params_bool=False, verbose=False)
+                true_kan.fix_symbolic(0, 1, 0, fun_name=f2, random=False, fit_params_bool=False, verbose=False)
+                true_kan.fix_symbolic(1, 0, 0, fun_name=f3, random=False, fit_params_bool=False, verbose=False)
+
+                with torch.no_grad():
+                    input_features = torch.tensor(np.stack([ds["sw_pot"].values, ds["dsw_pot"].values, ds["ta"].values], axis=1), dtype=torch.float32)
+                    prescribed_para = true_kan(input_features)
+
+                # Plot true functional relationships
+                true_kan.attribute()
+                true_kan.node_attribute()
+                true_kan.plot(folder=os.path.join(plot_dir, "splines"), in_vars=features, out_vars=targets)  #  scale=5, varscale=0.13)
+                plt.savefig(os.path.join(plot_dir, f"TRUE_kan_plot.png"))
+                plt.close()
+
+                # For now, use PartialDependenceVariance to measure importance
+                # of each functional relationship. There may be a better way
+                # but not trivial for multi-layer KAN.
+                from alibi.explainers import ALE, PartialDependenceVariance, plot_ale, plot_pd_variance
+                @torch.no_grad()
+                def predictor(X: np.ndarray) -> np.ndarray:
+                    X = torch.as_tensor(X, device="cpu")
+                    return true_kan(X).cpu().numpy()
+
+                with warnings.catch_warnings():  # suppress warnings inside alibi code
+                    warnings.simplefilter("ignore")
+                    pd_variance = PartialDependenceVariance(predictor=predictor,
+                                                            feature_names=features,
+                                                            target_names=targets)
+                    exp_importance = pd_variance.explain(input_features.detach().cpu().numpy(), method='importance')
+                    importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
+                    self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
+            elif rb_synth == 9:
+                ds["rb"] = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"] + 1.03506858
+
+                # construct true KAN for true feature importance
+                true_kan = kan.KAN(width=[len(features), len(targets)], device="cpu", base_fun="identity")
+
+                # set mask to 0 to ignore spline (learnable) portion and use symbolic only
+                true_kan.act_fun[0].mask = torch.zeros_like(true_kan.act_fun[0].mask)
+                true_kan.save_acts = True
+                def f1(x):
+                    return 0.0075*x
+                def f2(x):
+                    return -0.00375*x
+                true_kan.fix_symbolic(0, 0, 0, fun_name=f1, random=False, fit_params_bool=False, verbose=False)
+                true_kan.fix_symbolic(0, 1, 0, fun_name=f2, random=False, fit_params_bool=False, verbose=False)
+
+                with torch.no_grad():
+                    input_features = torch.tensor(np.stack([ds["sw_pot"].values, ds["dsw_pot"].values, ds["ta"].values], axis=1), dtype=torch.float32)
+                    prescribed_para = true_kan(input_features)
+
+                # Plot true functional relationships
+                true_kan.attribute()
+                true_kan.node_attribute()
+                true_kan.plot(folder=os.path.join(plot_dir, "splines"), in_vars=features, out_vars=targets)  #  scale=5, varscale=0.13)
+                plt.savefig(os.path.join(plot_dir, f"TRUE_kan_plot.png"))
+                plt.close()
+
+                # For now, use PartialDependenceVariance to measure importance
+                # of each functional relationship. There may be a better way
+                # but not trivial for multi-layer KAN.
+                from alibi.explainers import ALE, PartialDependenceVariance, plot_ale, plot_pd_variance
+                @torch.no_grad()
+                def predictor(X: np.ndarray) -> np.ndarray:
+                    X = torch.as_tensor(X, device="cpu")
+                    return true_kan(X).cpu().numpy()
+
+                with warnings.catch_warnings():  # suppress warnings inside alibi code
+                    warnings.simplefilter("ignore")
+                    pd_variance = PartialDependenceVariance(predictor=predictor,
+                                                            feature_names=features,
+                                                            target_names=targets)
+                    exp_importance = pd_variance.explain(input_features.detach().cpu().numpy(), method='importance')
+                    importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
+                    self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
+                    print("True relationships linear", self.true_relationships)
+                    print("Based on edge scores", true_kan.edge_scores[0])
+            else:
+                raise ValueError(f"Invalid value of rb_synth, should be integer between [0, 7]. Got {rb_synth}.")
+
+            # TODO Not sure where the true q10 is set, hardcoding to 1.5 for now.
+            ds["rb"] = ds["rb"] - ds["rb"].min() + 0.1  # Require non-negativity
         else:
-            raise ValueError(f"Invalid value of rb_synth, should be integer between [0, 7]. Got {rb_synth}.")
-
-        # TODO Not sure where the true q10 is set, hardcoding to 1.5 for now.
-        ds["rb"] = ds["rb"] - ds["rb"].min() + 0.1  # Require non-negativity
-        ds["reco"] = ds["rb"] * (1.5 **(0.1 * (ds['ta'] - 15)))
-
+            # same formula as paper
+            ds["rb"] = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"] + 1.03506858
         # Add noise
+        ds["reco"] = ds["rb"] * (1.5 **(0.1 * (ds['ta'] - 15)))
         if reco_noise_std > 0.0:
             eps = torch.nn.init.trunc_normal_(torch.empty(ds["rb"].values.shape, requires_grad=False), mean=0, std=reco_noise_std, a=-0.95, b=0.95)
             ds["reco"] = ds["reco"] * (1 + eps.numpy())
@@ -371,7 +469,7 @@ class FluxData(LightningDataModule):
             var_new = var + '_pred'
             dummy = ds[var].copy()
             dummy.values[:] = np.nan
-            dummy = dummy.expand_dims(epoch=np.arange(num_epochs))
+            dummy = dummy.expand_dims(epoch=np.arange(num_epochs + 1))
             ds_new[var_new] = dummy.copy()
 
         return ds_new

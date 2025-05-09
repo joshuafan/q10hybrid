@@ -11,6 +11,7 @@ import pytorch_lightning as pl
 
 from utils.data_utils import Normalize
 
+import math
 import os
 import sys
 from sklearn.metrics import r2_score
@@ -20,6 +21,7 @@ from models.feedforward import FeedForward, SENN_Simple, robustness_loss
 
 sys.path.append('../')
 sys.path.append('../../')
+import misc_utils
 import visualization_utils
 import kan 
 from alibi.explainers import ALE, PartialDependenceVariance, plot_ale, plot_pd_variance
@@ -60,7 +62,8 @@ class Q10Model(pl.LightningModule):
             dropout: float = 0.,
             activation: str = 'relu',  # 'tanh',
             num_steps: int = 0,
-            model: str = 'nn') -> None:
+            model: str = 'nn',
+            true_relationships: np.array = None) -> None:
         """Hybrid Q10 model.
 
         Note that restoring is not working currently as the model training is only taking
@@ -155,10 +158,11 @@ class Q10Model(pl.LightningModule):
 
         self.num_steps = num_steps
 
-        # Used for strring results.
+        # Used for storing results.
         self.ds_train = ds_train
         self.ds_val = ds_val
         self.ds_test = ds_test
+        self.true_relationships = true_relationships
 
         # Error if more than 100000 steps--ok here, but careful if you copy code for other projects!.
         self.q10_history = np.zeros(100000, dtype=np.float32) * np.nan
@@ -229,10 +233,17 @@ class Q10Model(pl.LightningModule):
         Helper function that takes in preprocessed NN input of shape [batch, n_input],
         passes it through nn and softplus, sums over batch dimension, then returns [n_output]
         """
-        output = torchf.softplus(func(input))
+        if self.hparams.rb_constraint == "softplus":
+            output = torchf.softplus(func(input))
+        elif self.hparams.rb_constraint == "relu":
+            output = torchf.relu(func(input))
+        elif self.hparams.rb_constraint == "none":
+            output = func(input)
+        else:
+            raise ValueError("invalid rb_constraint")
         return output.sum(0)
 
-    def get_jacobian_jacrev(self):
+    def get_jacobian_jacrev(self, input):
         """
         Returns Jacobian using jacrev, of shape [batch, n_output, n_input].
         For each batch item, it is dParam/dInput.
@@ -241,11 +252,14 @@ class Q10Model(pl.LightningModule):
 
         input should have shape [batch, n_input]
         """
+        if input is None:
+            input = self.nn_input
+
         # Using jacrev, summing the outputs across batch as each example's output
         # only depends on that example's input
         self.nn.zero_grad()
-        batch_jacobian1 = torch.func.jacrev(self.predict_params_summed, argnums=1)(self.nn, self.nn_input)  # [n_outputs, batch, n_inputs]
-        batch_jacobian1 = batch_jacobian1.squeeze(0)  # [batch, n_inputs]
+        batch_jacobian1 = torch.func.jacrev(self.predict_params_summed, argnums=1)(self.nn, input)  # [n_outputs, batch, n_inputs]
+        batch_jacobian1 = batch_jacobian1.permute((1, 0, 2))  # [batch, n_output, n_input]  # NOTE Previously .squeeze(0)  # [batch, n_inputs]
         return batch_jacobian1
 
     def get_jacobian_grad_precomputed(self):
@@ -287,9 +301,9 @@ class Q10Model(pl.LightningModule):
 
 
     def training_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        # Split batch (a dict) into actual data and the time-index returned by the dataset.
-        if batch_idx == 1 and self.model == 'senn':
-            print("COEFS", self.nn.coefs[0:5], self.nn.bias)
+        # # Split batch (a dict) into actual data and the time-index returned by the dataset.
+        # if batch_idx == 1 and self.model == 'senn':
+        #     print("COEFS", self.nn.coefs[0:5], self.nn.bias)
 
         batch, idx = batch
 
@@ -297,8 +311,9 @@ class Q10Model(pl.LightningModule):
         # print("TRAIN STEP: Normalized means", self.input_norm(batch).mean(dim=0), "stds", self.input_norm(batch).std(dim=0))
 
         # Update grid for KAN if desired
-        if self.model == 'kan' and self.kan_update_grid == 1 and batch_idx == 1 and self.current_epoch < 10:
+        if self.model == 'kan' and self.kan_update_grid == 1 and batch_idx == 1 and self.current_epoch < 20:
             self.nn.update_grid(self.input_norm(batch))
+            print('Updated grid to', self.nn.act_fun[0].grid)
 
         # self(...) calls self.forward(...) with some extras. The `rb` is not needed here.
         reco_hat, rb_hat, z = self(batch)
@@ -354,34 +369,35 @@ class Q10Model(pl.LightningModule):
             _, kan_node_entropy_loss, _, _, _ = self.nn.reg(reg_metric='node_influence_on_output', lamb_l1=0, lamb_entropy=1., lamb_coef=0., lamb_coefdiff=0., return_indiv=True)
             if self.hparams.lambda_kan_l1 > 0:
                 self.log('kan_l1_loss', kan_l1_loss, prog_bar=True)
-                new_lambda = self.hparams.lambda_kan_l1  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_l1  # max(0, self.hparams.lambda_kan_l1 * (self.current_epoch - 20))
-                total_loss += (new_lambda * kan_l1_loss)
-                # total_loss += (self.hparams.lambda_kan_l1 * kan_l1_loss)
+                # new_lambda = self.hparams.lambda_kan_l1  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_l1  # max(0, self.hparams.lambda_kan_l1 * (self.current_epoch - 20))
+                # total_loss += (new_lambda * kan_l1_loss)
+                total_loss += (self.hparams.lambda_kan_l1 * kan_l1_loss)
             if self.hparams.lambda_kan_entropy > 0:
                 self.log('kan_entropy_loss', kan_entropy_loss, prog_bar=True)
-                new_lambda = self.hparams.lambda_kan_entropy  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_entropy   #max(0, self.hparams.lambda_kan_entropy * (self.current_epoch - 20))
-                total_loss += (new_lambda * kan_entropy_loss)
-                # total_loss += (self.hparams.lambda_kan_entropy * kan_entropy_loss)
+                # new_lambda = self.hparams.lambda_kan_entropy  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_entropy   #max(0, self.hparams.lambda_kan_entropy * (self.current_epoch - 20))
+                # total_loss += (new_lambda * kan_entropy_loss)
+                total_loss += (self.hparams.lambda_kan_entropy * kan_entropy_loss)
             if self.hparams.lambda_kan_node_entropy > 0:
                 self.log('lambda_kan_node_entropy', kan_node_entropy_loss, prog_bar=True)
-                new_lambda = self.hparams.lambda_kan_node_entropy
-                total_loss += (new_lambda * kan_node_entropy_loss)
+                # new_lambda = self.hparams.lambda_kan_node_entropy
+                # total_loss += (new_lambda * kan_node_entropy_loss)
+                total_loss += (self.hparams.lambda_kan_node_entropy * kan_node_entropy_loss)
             if self.hparams.lambda_kan_coefdiff > 0:
                 self.log('kan_coefdiff_loss', kan_coefdiff_loss, prog_bar=True)
-                new_lambda = self.hparams.lambda_kan_coefdiff  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff   # max(0, self.hparams.lambda_kan_coefdiff * (self.current_epoch - 20))
-                total_loss += (new_lambda * kan_coefdiff_loss)
-                # total_loss += (self.hparams.lambda_kan_coefdiff * kan_coefdiff_loss)            
+                # new_lambda = self.hparams.lambda_kan_coefdiff  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff   # max(0, self.hparams.lambda_kan_coefdiff * (self.current_epoch - 20))
+                # total_loss += (new_lambda * kan_coefdiff_loss)
+                total_loss += (self.hparams.lambda_kan_coefdiff * kan_coefdiff_loss)            
             if self.hparams.lambda_kan_coefdiff2 > 0:
                 self.log('kan_coefdiff2_loss', kan_coefdiff2_loss, prog_bar=True)
-                new_lambda = self.hparams.lambda_kan_coefdiff2  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff2   # max(0, self.hparams.lambda_kan_coefdiff2 * (self.current_epoch - 20))
-                total_loss += (new_lambda * kan_coefdiff2_loss)
-                # total_loss += (self.hparams.lambda_kan_coefdiff2 * kan_coefdiff2_loss)
+                # new_lambda = self.hparams.lambda_kan_coefdiff2  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff2   # max(0, self.hparams.lambda_kan_coefdiff2 * (self.current_epoch - 20))
+                # total_loss += (new_lambda * kan_coefdiff2_loss)
+                total_loss += (self.hparams.lambda_kan_coefdiff2 * kan_coefdiff2_loss)
 
-        # SENN robustness loss
-        if self.model == "senn":
-            r_loss = robustness_loss(self.nn_input, self.nn.predictions, self.nn.coefs)
-            self.log('robustness_loss', r_loss, prog_bar=True)
-            total_loss += self.hparams.lambda_robustness * r_loss
+        # # SENN robustness loss
+        # if self.model == "senn":
+        #     r_loss = robustness_loss(self.nn_input, self.nn.predictions, self.nn.coefs)
+        #     self.log('robustness_loss', r_loss, prog_bar=True)
+        #     total_loss += self.hparams.lambda_robustness * r_loss
 
         # This dict is available in `on_train_epoch_end` after saving to self.train_step_outputs.
         outputs = {'reco_hat': reco_hat, 'rb_hat': rb_hat, 'idx': idx}
@@ -437,7 +453,7 @@ class Q10Model(pl.LightningModule):
             self.ds_train['reco_pred'].values[self.current_epoch, idx] = reco_hat
             self.ds_train['rb_pred'].values[self.current_epoch, idx] = rb_hat
 
-        if self.current_epoch % 10 == 9:
+        if self.current_epoch % 10 == 0:
             # True vs predicted scatters
             print("Plotting to ", self.logger.log_dir)
             y_hats = [self.ds_train['reco_pred'].values[self.current_epoch, :], self.ds_train['rb_pred'].values[self.current_epoch, :]]
@@ -450,6 +466,7 @@ class Q10Model(pl.LightningModule):
 
 
     def on_validation_epoch_end(self) -> None:
+        print("VALID EPOCH END", self.current_epoch)
 
         # Iterate results from each validation step.
         for item in self.validation_step_outputs:
@@ -461,16 +478,24 @@ class Q10Model(pl.LightningModule):
             self.ds_val['reco_pred'].values[self.current_epoch, idx] = reco_hat
             self.ds_val['rb_pred'].values[self.current_epoch, idx] = rb_hat
 
-        # Store nn_input in case the following methods change it
-        cached_nn_input = self.nn_input
-
-        if self.current_epoch % 10 == 9:
+        if self.current_epoch % 10 == 0 or self.current_epoch == self.trainer.max_epochs:
+            if self.current_epoch == self.trainer.max_epochs:
+                epoch_str = "FINAL"
+            else:
+                epoch_str = f"epoch{self.current_epoch}"
             # True vs predicted scatters
             print("Plotting to ", self.logger.log_dir)
             y_hats = [self.ds_val['reco_pred'].values[self.current_epoch, :], self.ds_val['rb_pred'].values[self.current_epoch, :]]
             ys = [self.ds_val['reco'].values, self.ds_val['rb'].values]
             titles = ['R_eco (labeled)', 'R_b (latent)']
-            visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_true_vs_predicted_val.png"),
+            visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"{epoch_str}_true_vs_predicted_val.png"),
+                                                                y_hats=y_hats, ys=ys, titles=titles)
+            
+            # normed version of reco
+            y_hats = [self.target_norm(torch.tensor(self.ds_val['reco_pred'].values[self.current_epoch, :]).unsqueeze(1))]
+            ys = [self.target_norm(torch.tensor(self.ds_val['reco'].values).unsqueeze(1))]
+            titles = ['R_eco (NORMALIZED labeled)']
+            visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"{epoch_str}_true_vs_predicted_val_NORMALIZED.png"),
                                                                 y_hats=y_hats, ys=ys, titles=titles)
 
             # KAN plot. Note this should go before other plots, since it relies on cached values from the last batch passed through the model
@@ -482,41 +507,71 @@ class Q10Model(pl.LightningModule):
                 self.nn.node_attribute()
 
                 # Plot the pruned model
-                pruned_model = self.nn.prune(node_th=0.03, edge_th=0.03)
+                pruned_model = self.nn.prune()  # node_th=0.03, edge_th=0.03)
                 # pruned_model.auto_swap()  # swap neurons to make it simpler? 
                 pruned_model.plot(folder=os.path.join(self.logger.log_dir, "splines_pruned"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
-                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_kan_plot_pruned.png"))
+                plt.savefig(os.path.join(self.logger.log_dir, f"{epoch_str}_kan_plot_pruned.png"))
                 plt.close()
 
                 # Plot the unpruned model
                 self.nn.plot(folder=os.path.join(self.logger.log_dir, "splines"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
-                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_kan_plot.png"))
+                plt.savefig(os.path.join(self.logger.log_dir, f"{epoch_str}_kan_plot.png"))
                 plt.close()
 
-        # Feature importance: log PDP Variance scores
-        pd_variance = PartialDependenceVariance(predictor=self.predictor,
-                                feature_names=self.features,
-                                target_names=self.targets)
-        exp_importance = pd_variance.explain(cached_nn_input.detach().cpu().numpy(), method='importance')
-        importance_scores = exp_importance.data['feature_importance'].flatten()
-        for feat_idx, feat in enumerate(self.features):
-            self.log(f'{feat}_importance', importance_scores[feat_idx], prog_bar=False, logger=True)
+            # print("True impt", self.true_relationships)
+            # print("Pred jac impt", jacobian_importances)
+            # print("PRed pdv impt", pdv_importances)
 
-        if self.current_epoch % 10 == 9:
-            if self.model == "nn":
-                # Plot PDP variance
-                plot_pd_variance(exp=exp_importance)
-                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_pd_variance.png"))
-                plt.close()
+            # # If functional relationships are known, compare KAN's predicted relationships with ground-truth relationships
+            # # Save picture of functional relationships. Source: https://stackoverflow.com/questions/69986007/matplotlib-imshow-with-1-color-for-each-discrete-value
+            # fig, axeslist = plt.subplots(1, len(predicted_importances_all)+1, figsize=(6*(len(predicted_importances_all)+1), 6))
+            # cmap = plt.get_cmap('viridis')
+            # for pred_idx, (pred_method, pred_rel) in enumerate(predicted_importances_all.items()):
+            #     relationship_kl = misc_utils.kl_divergence(self.true_relationships, pred_rel)
+            #     relationship_l2 = math.sqrt(((self.true_relationships - pred_rel) ** 2).sum())
+            #     print("REl metrics", relationship_kl, relationship_l2)
+            #     im = axeslist[pred_idx].imshow(pred_rel, cmap=cmap, vmin=0, vmax=1)  #, vmin=-0.5, vmax=5.5, cmap=cmap, interpolation="none")
+            #     axeslist[pred_idx].set_xticks(np.arange(len(self.targets)))
+            #     axeslist[pred_idx].set_yticks(np.arange(len(self.features)))
+            #     axeslist[pred_idx].set_xticklabels(self.targets, rotation='vertical')
+            #     axeslist[pred_idx].set_yticklabels(self.features)
+            #     axeslist[pred_idx].set_title(f"Predicted by {pred_method}\n(KL: {relationship_kl:.3f}, Euclidean dist: {relationship_l2:.3f})")
+            # im = axeslist[-1].imshow(self.true_relationships, cmap=cmap, vmin=0, vmax=1)  #, vmin=-0.5, vmax=5.5, cmap=cmap, interpolation="none")
+            # axeslist[-1].set_xticks(np.arange(len(self.targets)))
+            # axeslist[-1].set_yticks(np.arange(len(self.features)))
+            # axeslist[-1].set_xticklabels(self.targets, rotation='vertical')
+            # axeslist[-1].set_yticklabels(self.features)
+            # axeslist[-1].set_title("Ground-truth")
+            # fig.colorbar(im, orientation="vertical", ax=axeslist[-1])
+            # plt.tight_layout()
+            # plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_functional_relationships.png"))
+            # plt.close()
 
-                # Accumulated Local Effects plot (similar to partial dependence plot
-                # but better with correlated features)
-                ale = ALE(self.predictor, feature_names=self.features, target_names=self.targets)
-                exp = ale.explain(cached_nn_input.detach().cpu().numpy())
-                plot_ale(exp)
-                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_ale.png"))
-                plt.close()
+            # if self.model == "nn":
+            #     # Plot PDP variance
+            #     plot_pd_variance(exp=exp_importance)
+            #     plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_pd_variance.png"))
+            #     plt.close()
 
+            #     # Accumulated Local Effects plot (similar to partial dependence plot
+            #     # but better with correlated features)
+            #     ale = ALE(self.predictor, feature_names=self.features, target_names=self.targets)
+            #     exp = ale.explain(cached_nn_input.detach().cpu().numpy())
+            #     plot_ale(exp)
+            #     plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_ale.png"))
+            #     plt.close()
+
+        # Metrics to save
+        valid_reco_r2, valid_reco_mse, valid_reco_mae, valid_reco_corr = misc_utils.compute_metrics(self.ds_val['reco'].values, self.ds_val['reco_pred'].values[self.current_epoch, :])
+        valid_rb_r2, valid_rb_mse, valid_rb_mae, valid_rb_corr = misc_utils.compute_metrics(self.ds_val['rb'].values, self.ds_val['rb_pred'].values[self.current_epoch, :])
+        self.log('valid_reco_r2', valid_reco_r2)
+        self.log('valid_reco_mse', valid_reco_mse)
+        self.log('valid_reco_mae', valid_reco_mae)
+        self.log('valid_reco_corr', valid_reco_corr)
+        self.log('valid_rb_r2', valid_rb_r2)
+        self.log('valid_rb_mse', valid_rb_mse)
+        self.log('valid_rb_mae', valid_rb_mae)
+        self.log('valid_rb_corr', valid_rb_corr)
         self.validation_step_outputs.clear()  # free memory
         print("\n")
 
@@ -533,39 +588,154 @@ class Q10Model(pl.LightningModule):
         return outputs
 
 
+    # # Need to enable grad to compute Jacobian feature importance
+    # # https://github.com/Lightning-AI/pytorch-lightning/issues/201
+    @torch.inference_mode(False)
+    @torch.enable_grad()
     def on_test_epoch_end(self) -> None:
         # Iterate results from each epoch step.
-        print("ON testepoch end", self.current_epoch)
-        for item in self.test_step_outputs:
-            reco_hat = item['reco_hat'][:, 0].cpu()
-            rb_hat = item['rb_hat'][:, 0].cpu()
-            idx = item['idx'].cpu()
+        if self.model == "kan":
+            print("GRID FINAL TEST", self.nn.act_fun[0].grid)
 
-            # Assign predictions to the right time steps.
-            # For some reason, self.current_epoch is equal to max_epochs (1 higher than it
-            # should be). Reduce by 1 to fit into ds_test.
-            self.ds_test['reco_pred'].values[self.current_epoch - 1, idx] = reco_hat
-            self.ds_test['rb_pred'].values[self.current_epoch - 1, idx] = rb_hat
+        with torch.no_grad():
+            for item in self.test_step_outputs:
+                reco_hat = item['reco_hat'][:, 0].cpu()
+                rb_hat = item['rb_hat'][:, 0].cpu()
+                idx = item['idx'].cpu()
 
-        print("reco pred test", self.ds_test['reco_pred'].shape, self.ds_test['reco'].shape)
+                # Assign predictions to the right time steps.
+                # For some reason, self.current_epoch is equal to max_epochs (1 higher than it
+                # should be). Reduce by 1 to fit into ds_test.
+                self.ds_test['reco_pred'].values[self.current_epoch, idx] = reco_hat
+                self.ds_test['rb_pred'].values[self.current_epoch, idx] = rb_hat
 
-        # True vs predicted scatters
-        print("Plotting to ", self.logger.log_dir)
-        y_hats = [self.ds_test['reco_pred'].values[self.current_epoch - 1, :], self.ds_test['rb_pred'].values[self.current_epoch - 1, :]]
-        ys = [self.ds_test['reco'].values, self.ds_test['rb'].values]
-        titles = ['R_eco (labeled)', 'R_b (latent)']
-        visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"true_vs_predicted_epoch{self.current_epoch}_test.png"),
-                                                            y_hats=y_hats, ys=ys, titles=titles)
-        self.test_step_outputs.clear()  # frree memory
+        # Store nn_input in case the following methods change it
+        cached_nn_input = self.nn_input.clone()
 
-        # Plot q10 history
-        non_nan_idx = np.flatnonzero(~np.isnan(self.q10_history))
-        plt.plot(non_nan_idx, self.q10_history[non_nan_idx])
-        plt.xlabel("Step number")
-        plt.ylabel("Predicted Q10")
-        plt.title("Q10 predictions throughout training")
-        plt.savefig(os.path.join(self.logger.log_dir, "predicted_q10s.png"))
-        plt.close()
+        # # KAN plot. Note this should go before other plots, since it relies on cached values
+        # # from the last batch passed through the model
+        # # (the below plots pass other non-representative data through the model)
+        # if self.model in ["kan", "pure_kan"]:
+        #     out_vars = ["Rb"] if self.model == "kan" else ["Reco"]
+        #     self.nn.to(self.device)
+        #     self.nn.attribute()
+        #     self.nn.node_attribute()
+
+        #     # Plot the pruned model
+        #     pruned_model = self.nn.prune()  # node_th=0.03, edge_th=0.03)
+        #     # pruned_model.auto_swap()  # swap neurons to make it simpler? 
+        #     pruned_model.plot(folder=os.path.join(self.logger.log_dir, "splines_pruned"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
+        #     plt.savefig(os.path.join(self.logger.log_dir, f"FINAL_kan_plot_pruned.png"))
+        #     plt.close()
+
+        #     # Plot the unpruned model
+        #     self.nn.plot(folder=os.path.join(self.logger.log_dir, "splines"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
+        #     plt.savefig(os.path.join(self.logger.log_dir, f"FINAL_kan_plot.png"))
+        #     plt.close()
+
+        # Compute other feature importances
+        # Feature importance by Jacobian
+        jacobian = self.get_jacobian_jacrev(cached_nn_input)  # [batch, n_params, n_inputs]
+        avg_jacobian_magnitude = jacobian.abs().mean(dim=0).detach().cpu().numpy().T  # transpose to [n_inputs, n_params]
+        jacobian_importances = avg_jacobian_magnitude / avg_jacobian_magnitude.sum(axis=0, keepdims=True)
+
+        # Feature importance by Partial Dependence Variance
+        with torch.no_grad():            
+            pd_variance = PartialDependenceVariance(predictor=self.predictor,
+                                    feature_names=self.features,
+                                    target_names=self.targets)
+            exp_importance = pd_variance.explain(cached_nn_input.detach().cpu().numpy(), method='importance')
+            importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
+            pdv_importances = importance_scores / importance_scores.sum(axis=0, keepdims=True)
+            for feat_idx, feat in enumerate(self.features):
+                self.log(f'{feat}_importance', pdv_importances.flatten()[feat_idx], prog_bar=False, logger=True)
+            predicted_importances_all = {"Jacobian": jacobian_importances,
+                                        "Partial Dependence Variance": pdv_importances}
+            if self.model == "kan" and self.hparams.num_layers == 1:
+                # If using one-layer KAN, read off functional relationships with mask
+                kan_importances = self.nn.edge_scores[0].permute(1, 0).detach().cpu().numpy()
+                print("KAN impts", kan_importances)
+                predicted_importances_all["KAN"] = kan_importances
+            DEFAULT_REL = "KAN" if "KAN" in predicted_importances_all else "Partial Dependence Variance"
+            default_kl = misc_utils.kl_divergence(self.true_relationships, predicted_importances_all[DEFAULT_REL])
+            default_l2 = math.sqrt(((self.true_relationships - predicted_importances_all[DEFAULT_REL]) ** 2).sum())
+
+            # If functional relationships are known, compare KAN's predicted relationships with ground-truth relationships
+            # Save picture of functional relationships. Source: https://stackoverflow.com/questions/69986007/matplotlib-imshow-with-1-color-for-each-discrete-value
+            fig, axeslist = plt.subplots(1, len(predicted_importances_all)+1, figsize=(6*(len(predicted_importances_all)+1), 6))
+            cmap = plt.get_cmap('Greens')
+            for pred_idx, (pred_method, pred_rel) in enumerate(predicted_importances_all.items()):
+                relationship_kl = misc_utils.kl_divergence(self.true_relationships, pred_rel)
+                relationship_l2 = math.sqrt(((self.true_relationships - pred_rel) ** 2).sum())
+                im = axeslist[pred_idx].imshow(pred_rel, cmap=cmap, vmin=0, vmax=1)  #, vmin=-0.5, vmax=5.5, cmap=cmap, interpolation="none")
+                axeslist[pred_idx].set_xticks(np.arange(len(self.targets)))
+                axeslist[pred_idx].set_yticks(np.arange(len(self.features)))
+                axeslist[pred_idx].set_xticklabels(self.targets, rotation='vertical')
+                axeslist[pred_idx].set_yticklabels(self.features)
+                axeslist[pred_idx].set_title(f"Predicted by {pred_method}\n(KL: {relationship_kl:.3f}, Euclidean dist: {relationship_l2:.3f})")
+            im = axeslist[-1].imshow(self.true_relationships, cmap=cmap, vmin=0, vmax=1)  #, vmin=-0.5, vmax=5.5, cmap=cmap, interpolation="none")
+            axeslist[-1].set_xticks(np.arange(len(self.targets)))
+            axeslist[-1].set_yticks(np.arange(len(self.features)))
+            axeslist[-1].set_xticklabels(self.targets, rotation='vertical')
+            axeslist[-1].set_yticklabels(self.features)
+            axeslist[-1].set_title("Ground-truth")
+            fig.colorbar(im, orientation="vertical", ax=axeslist[-1])
+            plt.tight_layout()
+            plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_functional_relationships.png"))
+            plt.close()
+
+            if self.model == "nn":
+                # Plot PDP variance
+                plot_pd_variance(exp=exp_importance)
+                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_pd_variance.png"))
+                plt.close()
+
+                # Accumulated Local Effects plot (similar to partial dependence plot
+                # but better with correlated features)
+                ale = ALE(self.predictor, feature_names=self.features, target_names=self.targets)
+                exp = ale.explain(cached_nn_input.detach().cpu().numpy())
+                plot_ale(exp)
+                plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_ale.png"))
+                plt.close()
+
+            # True vs predicted scatters
+            print("Plotting to ", self.logger.log_dir)
+            y_hats = [self.ds_test['reco_pred'].values[self.current_epoch, :], self.ds_test['rb_pred'].values[self.current_epoch, :]]
+            ys = [self.ds_test['reco'].values, self.ds_test['rb'].values]
+            titles = ['R_eco (labeled)', 'R_b (latent)']
+            visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"FINAL_true_vs_predicted_test.png"),
+                                                                y_hats=y_hats, ys=ys, titles=titles)
+
+            # normed version of reco
+            y_hats = [self.target_norm(torch.tensor(self.ds_test['reco_pred'].values[self.current_epoch, :]).unsqueeze(1))]
+            ys = [self.target_norm(torch.tensor(self.ds_test['reco'].values).unsqueeze(1))]
+            titles = ['R_eco (NORMALIZED labeled)']
+            visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"FINAL_true_vs_predicted_test_NORMALIZED.png"),
+                                                                y_hats=y_hats, ys=ys, titles=titles)
+
+            # Metrics to save
+            test_reco_r2, test_reco_mse, test_reco_mae, test_reco_corr = misc_utils.compute_metrics(self.ds_test['reco'].values, self.ds_test['reco_pred'].values[self.current_epoch, :])
+            test_rb_r2, test_rb_mse, test_rb_mae, test_rb_corr = misc_utils.compute_metrics(self.ds_test['rb'].values, self.ds_test['rb_pred'].values[self.current_epoch, :])
+            self.log('test_reco_r2', test_reco_r2)
+            self.log('test_reco_mse', test_reco_mse)
+            self.log('test_reco_mae', test_reco_mae)
+            self.log('test_reco_corr', test_reco_corr)
+            self.log('test_rb_r2', test_rb_r2)
+            self.log('test_rb_mse', test_rb_mse)
+            self.log('test_rb_mae', test_rb_mae)
+            self.log('test_rb_corr', test_rb_corr)
+            self.log('relationship_kl', default_kl)
+            self.log('relationship_l2', default_l2)
+            self.test_step_outputs.clear()  # free memory
+
+            # Plot q10 history
+            non_nan_idx = np.flatnonzero(~np.isnan(self.q10_history))
+            plt.plot(non_nan_idx, self.q10_history[non_nan_idx])
+            plt.xlabel("Step number")
+            plt.ylabel("Predicted Q10")
+            plt.title("Q10 predictions throughout training")
+            plt.savefig(os.path.join(self.logger.log_dir, "predicted_q10s.png"))
+            plt.close()
 
 
     def configure_optimizers(self) -> torch.optim.Optimizer:
