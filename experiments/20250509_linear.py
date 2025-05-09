@@ -12,7 +12,7 @@ python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_lay
 python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2
 
 # Our approach
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1
+python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --log_dir ./logs/20250509_linear_DEBUG
 python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 5
 
 
@@ -52,7 +52,7 @@ class Objective(object):
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
         # FIXED hyperparameters
-        rb_synth = 8
+        rb_synth = 9
         remove_high = "ta"
         remove_high_frac = 0.2
         reco_noise_std = 0.1
@@ -165,8 +165,6 @@ class Objective(object):
             model=self.args.model,
             rb_constraint=self.args.rb_constraint,
             true_relationships=fluxdata.true_relationships)
-        print("MODEL PARAM", list(model.named_parameters()))
-        print("MODEL BUFFERS", list(model.named_buffers()))
 
         # ------------
         # training
@@ -292,7 +290,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250509_abs_DEBUG', type=str)
+            '--log_dir', default='./logs/20250509_linear_DEBUG', type=str)
         return parser
 
 
@@ -409,3 +407,5 @@ def main(parser: ArgumentParser = None, **kwargs):
 
 if __name__ == '__main__':
     main()
+
+
