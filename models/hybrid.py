@@ -706,7 +706,7 @@ class Q10Model(pl.LightningModule):
                 # If using one-layer KAN, read off functional relationships with mask
                 kan_importances = self.nn.edge_scores[0].permute(1, 0).detach().cpu().numpy()
                 print("KAN impts", kan_importances)
-                predicted_importances_all["KAN"] = kan_importances
+                predicted_importances_all["KAN"] = kan_importances / kan_importances.sum(axis=0, keepdims=True)
             DEFAULT_REL = "KAN" if "KAN" in predicted_importances_all else "Partial Dependence Variance"
             default_kl = misc_utils.kl_divergence(self.true_relationships, predicted_importances_all[DEFAULT_REL])
             default_l2 = math.sqrt(((self.true_relationships - predicted_importances_all[DEFAULT_REL]) ** 2).sum())
