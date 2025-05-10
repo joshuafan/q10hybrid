@@ -313,7 +313,7 @@ class Q10Model(pl.LightningModule):
         # Update grid for KAN if desired
         if self.model == 'kan' and self.kan_update_grid == 1 and batch_idx == 1 and self.current_epoch < 20:
             self.nn.update_grid(self.input_norm(batch))
-            print('Updated grid to', self.nn.act_fun[1].grid)
+            # print('Updated grid to', self.nn.act_fun[1].grid)
 
         # self(...) calls self.forward(...) with some extras. The `rb` is not needed here.
         reco_hat, rb_hat, z = self(batch)
@@ -466,19 +466,17 @@ class Q10Model(pl.LightningModule):
 
 
     def on_validation_epoch_end(self) -> None:
-        print("VALID EPOCH END", self.current_epoch)
-        # print("GRID", self.nn.act_fun[1].grid)
-        # print("COEF", self.nn.act_fun[1].coef)
-        # print("Trainer", self.trainer.max_epochs, self.trainer.should_stop)
-        # print("2nd layer grid", self.nn.act_fun[1].grid)
-        # print("Inputs to 2nd layer", self.nn.acts[1][0:10])
-        print("ACTFUN MASK", self.nn.act_fun[1].mask)
-        print("SYMBOLIC MASK", self.nn.symbolic_fun[1].mask)
-        print("Scale base", self.nn.act_fun[1].scale_base, self.nn.act_fun[1].scale_sp)
-        print("Coef", self.nn.act_fun[1].coef)
-        print("Grid", self.nn.act_fun[1].grid)
-
-
+        # print("VALID EPOCH END", self.current_epoch)
+        # # print("GRID", self.nn.act_fun[1].grid)
+        # # print("COEF", self.nn.act_fun[1].coef)
+        # # print("Trainer", self.trainer.max_epochs, self.trainer.should_stop)
+        # # print("2nd layer grid", self.nn.act_fun[1].grid)
+        # # print("Inputs to 2nd layer", self.nn.acts[1][0:10])
+        # print("ACTFUN MASK", self.nn.act_fun[1].mask)
+        # print("SYMBOLIC MASK", self.nn.symbolic_fun[1].mask)
+        # print("Scale base", self.nn.act_fun[1].scale_base, self.nn.act_fun[1].scale_sp)
+        # print("Coef", self.nn.act_fun[1].coef)
+        # print("Grid", self.nn.act_fun[1].grid)
         # print("Node bias", self.nn.node_bias[1], self.nn.node_scale[1])
 
         # Iterate results from each validation step.
@@ -491,12 +489,11 @@ class Q10Model(pl.LightningModule):
             self.ds_val['reco_pred'].values[self.current_epoch, idx] = reco_hat
             self.ds_val['rb_pred'].values[self.current_epoch, idx] = rb_hat
 
-        print("ON VAL END - Rb", self.ds_val['rb_pred'].mean(), self.ds_val['rb_pred'].std())
+        # print("ON VAL END - Rb", self.ds_val['rb_pred'].mean(), self.ds_val['rb_pred'].std())
 
         if self.current_epoch % 10 == 0 or self.current_epoch == self.trainer.max_epochs or self.trainer.should_stop:
             if self.current_epoch == self.trainer.max_epochs or self.trainer.should_stop:
-                print("Early stopped", self.current_epoch)
-                epoch_str = "FINAL"
+                epoch_str = "FINAL"  # Indicates we're creating plots for the best epoch
             else:
                 epoch_str = f"epoch{self.current_epoch}"
 
@@ -663,12 +660,12 @@ class Q10Model(pl.LightningModule):
     @torch.enable_grad()
     def on_test_epoch_end(self) -> None:
         # Iterate results from each epoch step.
-        if self.model == "kan":
-            # print("GRID FINAL TEST", self.nn.act_fun[1].grid)
-            # print("COEF", self.nn.act_fun[1].coef)
-            # print("TEST Node bias", self.nn.node_bias[1], self.nn.node_scale[1])
-            print("TEST TEST) 2nd layer grid", self.nn.act_fun[1].grid)
-            print("Inputs to 2nd layer", self.nn.acts[1][0:10])
+        # if self.model == "kan":
+        #     # print("GRID FINAL TEST", self.nn.act_fun[1].grid)
+        #     # print("COEF", self.nn.act_fun[1].coef)
+        #     # print("TEST Node bias", self.nn.node_bias[1], self.nn.node_scale[1])
+        #     print("TEST TEST) 2nd layer grid", self.nn.act_fun[1].grid)
+        #     print("Inputs to 2nd layer", self.nn.acts[1][0:10])
 
         with torch.no_grad():
             for item in self.test_step_outputs:
@@ -682,7 +679,7 @@ class Q10Model(pl.LightningModule):
                 self.ds_test['reco_pred'].values[self.current_epoch, idx] = reco_hat
                 self.ds_test['rb_pred'].values[self.current_epoch, idx] = rb_hat
 
-        print("ON TEST END - Rb", self.ds_test['rb_pred'].mean(), self.ds_test['rb_pred'].std())
+        # print("ON TEST END - Rb", self.ds_test['rb_pred'].mean(), self.ds_test['rb_pred'].std())
 
         # Store nn_input in case the following methods change it
         cached_nn_input = self.nn_input.clone()

@@ -198,10 +198,10 @@ class FluxData(LightningDataModule):
             elif rb_synth == 8:
                 # linear followed by abs
                 old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]
-                ds["rb"] = np.abs((old_rb - old_rb.mean().item()) / old_rb.std().item())
                 mean_val, std_val = old_rb.mean().item(), old_rb.std().item()
+                ds["rb"] = np.abs((old_rb - mean_val) / std_val)
 
-                # construct true KAN for true feature importance
+                # Construct true KAN for true feature importance
                 true_kan = kan.KAN(width=[len(features), 1, len(targets)], device="cpu", base_fun="identity")
 
                 # set mask to 0 to ignore spline (learnable) portion and use symbolic only
@@ -246,6 +246,7 @@ class FluxData(LightningDataModule):
                     exp_importance = pd_variance.explain(input_features.detach().cpu().numpy(), method='importance')
                     importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
                     self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
+
             elif rb_synth == 9:
                 ds["rb"] = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"] + 1.03506858
 
@@ -282,16 +283,17 @@ class FluxData(LightningDataModule):
                     X = torch.as_tensor(X, device="cpu")
                     return true_kan(X).cpu().numpy()
 
-                with warnings.catch_warnings():  # suppress warnings inside alibi code
-                    warnings.simplefilter("ignore")
-                    pd_variance = PartialDependenceVariance(predictor=predictor,
-                                                            feature_names=features,
-                                                            target_names=targets)
-                    exp_importance = pd_variance.explain(input_features.detach().cpu().numpy(), method='importance')
-                    importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
-                    self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
-                    print("True relationships linear", self.true_relationships)
-                    print("Based on edge scores", true_kan.edge_scores[0])
+                # with warnings.catch_warnings():  # suppress warnings inside alibi code
+                #     warnings.simplefilter("ignore")
+                #     pd_variance = PartialDependenceVariance(predictor=predictor,
+                #                                             feature_names=features,
+                #                                             target_names=targets)
+                #     exp_importance = pd_variance.explain(input_features.detach().cpu().numpy(), method='importance')
+                #     importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
+                #     self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
+                self.true_relationships = true_kan.edge_scores[0].detach().cpu().numpy().T  # transpose to [n_inputs, n_params]
+                self.true_relationships = self.true_relationships / self.true_relationships.sum(axis=0, keepdims=True)
+                print("True relationships", self.true_relationships)
             else:
                 raise ValueError(f"Invalid value of rb_synth, should be integer between [0, 7]. Got {rb_synth}.")
 

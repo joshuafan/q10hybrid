@@ -165,8 +165,6 @@ class Objective(object):
             model=self.args.model,
             rb_constraint=self.args.rb_constraint,
             true_relationships=fluxdata.true_relationships)
-        print("MODEL PARAM", list(model.named_parameters()))
-        print("MODEL BUFFERS", list(model.named_buffers()))
 
         # ------------
         # training
@@ -354,22 +352,22 @@ def main(parser: ArgumentParser = None, **kwargs):
             'seed': [0],
         }
     elif args.model == "kan":
-        # search_space = {
-        #     'learning_rate': [1e-3, 1e-2, 1e-1],
-        #     'weight_decay': [1e-4],
-        #     'lambda_kan_l1': [1e-2],
-        #     'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-        #     'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
-        #     'seed' : [0],
-        # }
         search_space = {
-            'learning_rate': [1e-2],
+            'learning_rate': [1e-3, 1e-2, 1e-1],
             'weight_decay': [1e-4],
             'lambda_kan_l1': [1e-2],
-            'lambda_kan_entropy': [0.1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-            'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
+            'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+            'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
             'seed' : [0],
         }
+        # search_space = {
+        #     'learning_rate': [1e-2],
+        #     'weight_decay': [1e-4],
+        #     'lambda_kan_l1': [1e-2],
+        #     'lambda_kan_entropy': [0.1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+        #     'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
+        #     'seed' : [0],
+        # }
 
     # Modify log_dir
     args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'
