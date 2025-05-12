@@ -4,16 +4,11 @@ Removing top 20% of ta from train set
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 # pure NN
-python experiments/20250509_linear.py --model pure_nn --num_layers 2 --log_dir ./logs/20250509_linear
-
-
-# Hybrid only (Reichstein et al)
-python experiments/20250509_linear.py --model nn --rb_constraint softplus --num_layers 2 --log_dir ./logs/20250509_linear
-python experiments/20250509_linear.py --model nn --rb_constraint relu --num_layers 2 --log_dir ./logs/20250509_linear
-
-# Our approach
-python experiments/20250509_linear.py --model kan --rb_constraint softplus --num_layers 1 --log_dir ./logs/20250509_linear
-python experiments/20250509_linear.py --model kan --rb_constraint relu --num_layers 1 --log_dir ./logs/20250509_linear
+python experiments/20250509_linear.py --model pure_nn --num_layers 2 --stage final;
+python experiments/20250509_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
+python experiments/20250509_linear.py --model nn --rb_constraint relu --num_layers 2 --stage final;
+python experiments/20250509_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage final;
+python experiments/20250509_linear.py --model kan --rb_constraint relu --num_layers 1 --stage final;
 
 
 """
@@ -290,7 +285,10 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250509_linear_DEBUG', type=str)
+            '--log_dir', default='./logs/20250509_linear', type=str)
+        parser.add_argument(
+            '--stage', default='final', choices=['final', 'tuning'], type=str
+        )
         return parser
 
 
@@ -342,32 +340,79 @@ def main(parser: ArgumentParser = None, **kwargs):
     # }
 
     # Search spaces
-    if args.model in ["nn", "pure_nn"]:
-        search_space = {
-            'learning_rate': [1e-3, 1e-2, 1e-1],
-            'weight_decay': [0, 1e-4, 1e-3],
-            'lambda_kan_l1': [1e-10],
-            'lambda_kan_entropy': [1e-10],
-            'lambda_kan_coefdiff2': [1e-10],
-            'seed': [0],
-        }
-    elif args.model == "kan":
-        search_space = {
-            'learning_rate': [1e-3, 1e-2, 1e-1],
-            'weight_decay': [1e-4],
-            'lambda_kan_l1': [1e-2],
-            'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-            'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
-            'seed' : [0],
-        }
-        # search_space = {
-        #     'learning_rate': [1e-2],
-        #     'weight_decay': [1e-4],
-        #     'lambda_kan_l1': [1e-2],
-        #     'lambda_kan_entropy': [0.1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-        #     'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
-        #     'seed' : [0],
-        # }
+    if args.stage == "final":
+        if args.model == "pure_nn":
+            search_space  = {
+                'lambda_kan_l1': [1e-10],
+                'lambda_kan_entropy': [1e-10],
+                'lambda_kan_coefdiff2': [1e-10],
+                'learning_rate': [0.1],
+                'weight_decay': [0.0],
+                'seed': [1, 2, 3, 4],
+            }
+        elif args.model == "nn" and args.rb_constraint == "softplus":
+            search_space  = {
+                'lambda_kan_l1': [1e-10],
+                'lambda_kan_entropy': [1e-10],
+                'lambda_kan_coefdiff2': [1e-10],
+                'learning_rate': [0.1],
+                'weight_decay': [0.0],
+                'seed': [1, 2, 3, 4],
+            }
+        elif args.model == "nn" and args.rb_constraint == "relu":
+            search_space  = {
+                'lambda_kan_l1': [1e-10],
+                'lambda_kan_entropy': [1e-10],
+                'lambda_kan_coefdiff2': [1e-10],
+                'learning_rate': [0.1],
+                'weight_decay': [0.0],
+                'seed': [1, 2, 3, 4],
+            }
+        elif args.model == "kan" and args.rb_constraint == "softplus":
+            search_space  = {
+                'lambda_kan_l1': [1e-2],
+                'lambda_kan_entropy': [1e-2],
+                'lambda_kan_coefdiff2': [0.1],
+                'learning_rate': [0.1],
+                'weight_decay': [1e-4],
+                'seed': [1, 2, 3, 4],
+            }
+        elif args.model == "kan" and args.rb_constraint == "relu":
+            search_space  = {
+                'lambda_kan_l1': [1e-2],
+                'lambda_kan_entropy': [1e-2],
+                'lambda_kan_coefdiff2': [1.0],
+                'learning_rate': [1e-2],
+                'weight_decay': [1e-4],
+                'seed': [1, 2, 3, 4],
+            }
+    else:
+        if args.model in ["nn", "pure_nn"]:
+            search_space = {
+                'learning_rate': [1e-3, 1e-2, 1e-1],
+                'weight_decay': [0, 1e-4, 1e-3],
+                'lambda_kan_l1': [1e-10],
+                'lambda_kan_entropy': [1e-10],
+                'lambda_kan_coefdiff2': [1e-10],
+                'seed': [0],
+            }
+        elif args.model == "kan":
+            search_space = {
+                'learning_rate': [1e-3, 1e-2, 1e-1],
+                'weight_decay': [1e-4],
+                'lambda_kan_l1': [1e-2],
+                'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+                'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
+                'seed' : [0],
+            }
+            # search_space = {
+            #     'learning_rate': [1e-2],
+            #     'weight_decay': [1e-4],
+            #     'lambda_kan_l1': [1e-2],
+            #     'lambda_kan_entropy': [0.1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+            #     'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
+            #     'seed' : [0],
+            # }
 
     # Modify log_dir
     args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'

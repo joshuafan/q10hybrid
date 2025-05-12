@@ -80,6 +80,64 @@ python experiments/20250428_hyperparam_hardconstraint.py --model kan --rb_constr
 ```
 
 
+## Optuna notes
+
+Install Optuna dashboard
+```
+pip install optuna-dashboard
+
+optuna-dashboard sqlite:///./logs/20250509_abs_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
+Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=softplus/optuna.db --port 8081
+Best 1, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.001]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=relu/optuna.db --port 8081
+Best 2, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.0001]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=1_constraint=relu/optuna.db --port 8081
+Best 11, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.01, learning_rate: 0.01, weight_decay: 0.0001]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=2_constraint=relu/optuna.db --port 8081
+Best 36, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.1, lambda_kan_coefdiff2: 1.0, learning_rate: 0.01, weight_decay: 0.0001]
+
+
+
+optuna-dashboard sqlite:///./logs/20250509_linear_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
+Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
+
+optuna-dashboard sqlite:///./logs/20250509_linear_nn_layers=2_constraint=softplus/optuna.db --port 8081
+Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
+
+optuna-dashboard sqlite:///./logs/20250509_linear_nn_layers=2_constraint=relu/optuna.db --port 8081
+Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
+
+optuna-dashboard sqlite:///./logs/20250509_linear_kan_layers=1_constraint=softplus/optuna.db --port 8081
+Best 5, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.1, learning_rate: 0.1, weight_decay: 0.0001]
+
+optuna-dashboard sqlite:///./logs/20250509_linear_kan_layers=1_constraint=relu/optuna.db --port 8081
+Best 8, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 1.0, learning_rate: 0.01, weight_decay: 0.0001]
+
+
+
+
+
+
+
+
+
+# If this is being run on remote server on a compute node c0011 (different from head node):
+ssh -N -J jyf6@aida.cac.cornell.edu jyf6@c0011 -L 8081:localhost:8081
+# If this is being run on a remote server (head node)
+ssh -N jyf6@aida.cac.cornell.edu -L 8081:localhost:8081
+# If this is run locally, ignore the above.
+# In all cases, go to local browser.
+http://127.0.0.1:8081/
+
+
+```
+
+
 
 Run experiments:
 
