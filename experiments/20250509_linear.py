@@ -41,9 +41,26 @@ TRAINER_ARGS = dict(
 )
 
 
+def set_seeds(seed):
+    """
+    Attempts to set all random seeds to improve reproducibility.
+    """
+    import random
+    import numpy as np
+    import torch
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+
+
 class Objective(object):
     def __init__(self, args):
         self.args = args
+
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
         # FIXED hyperparameters
@@ -57,16 +74,17 @@ class Objective(object):
         use_ta = True
         kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
+        kan_absolute_deviation = True
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
-        kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
+        kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
         kan_noise = 0.3  # trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
         lambda_jacobian_l05 = 0.0  # trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
 
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
-        lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 0.0, 1.0)
         lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1, log=True)
+        lambda_kan_l1 = lambda_kan_entropy
         lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
         lambda_kan_coefdiff = 0.0  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1, log=True)  #, log=True)
@@ -84,6 +102,9 @@ class Objective(object):
             features = ['sw_pot', 'dsw_pot']
 
         pl.seed_everything(seed)
+        # set_seeds(seed)
+        # import torch
+        # print("SEED", seed, torch.initial_seed())
 
         # Further variables used in the hybrid model.
         physical = ['ta']
@@ -156,6 +177,7 @@ class Objective(object):
             kan_noise=kan_noise,
             kan_base_fun=kan_base_fun,
             kan_affine_trainable=kan_affine_trainable,
+            kan_absolute_deviation=kan_absolute_deviation,
             num_steps=len(train_loader) * max_epochs,
             model=self.args.model,
             rb_constraint=self.args.rb_constraint,
@@ -285,7 +307,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250509_linear', type=str)
+            '--log_dir', default='./logs/20250513_linear_FIXED', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -343,55 +365,49 @@ def main(parser: ArgumentParser = None, **kwargs):
     if args.stage == "final":
         if args.model == "pure_nn":
             search_space  = {
-                'lambda_kan_l1': [1e-10],
                 'lambda_kan_entropy': [1e-10],
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [0.1],
                 'weight_decay': [0.0],
-                'seed': [1, 2, 3, 4],
+                'seed': [1,2,3,4, 5],
             }
         elif args.model == "nn" and args.rb_constraint == "softplus":
             search_space  = {
-                'lambda_kan_l1': [1e-10],
                 'lambda_kan_entropy': [1e-10],
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [0.1],
                 'weight_decay': [0.0],
-                'seed': [1, 2, 3, 4],
+                'seed': [1, 2, 3, 4, 5],
             }
         elif args.model == "nn" and args.rb_constraint == "relu":
             search_space  = {
-                'lambda_kan_l1': [1e-10],
                 'lambda_kan_entropy': [1e-10],
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [0.1],
                 'weight_decay': [0.0],
-                'seed': [1, 2, 3, 4],
+                'seed': [1, 2, 3, 4, 5],
             }
         elif args.model == "kan" and args.rb_constraint == "softplus":
             search_space  = {
-                'lambda_kan_l1': [1e-2],
                 'lambda_kan_entropy': [1e-2],
                 'lambda_kan_coefdiff2': [0.1],
                 'learning_rate': [0.1],
                 'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4],
+                'seed': [1, 2, 3, 4, 5],
             }
         elif args.model == "kan" and args.rb_constraint == "relu":
             search_space  = {
-                'lambda_kan_l1': [1e-2],
                 'lambda_kan_entropy': [1e-2],
                 'lambda_kan_coefdiff2': [1.0],
                 'learning_rate': [1e-2],
                 'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4],
+                'seed': [1, 2, 3, 4, 5],
             }
     else:
         if args.model in ["nn", "pure_nn"]:
             search_space = {
                 'learning_rate': [1e-3, 1e-2, 1e-1],
                 'weight_decay': [0, 1e-4, 1e-3],
-                'lambda_kan_l1': [1e-10],
                 'lambda_kan_entropy': [1e-10],
                 'lambda_kan_coefdiff2': [1e-10],
                 'seed': [0],
@@ -400,7 +416,6 @@ def main(parser: ArgumentParser = None, **kwargs):
             search_space = {
                 'learning_rate': [1e-3, 1e-2, 1e-1],
                 'weight_decay': [1e-4],
-                'lambda_kan_l1': [1e-2],
                 'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
                 'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
                 'seed' : [0],

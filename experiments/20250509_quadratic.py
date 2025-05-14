@@ -3,17 +3,19 @@ Removing top 20% of ta from train set
 
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
-
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 5 --stage tuning
-
-
 # pure NN
-python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final
+python experiments/20250509_quadratic.py --model pure_nn --num_layers 2 --stage tuning;
+python experiments/20250509_quadratic.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
+python experiments/20250509_quadratic.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
+python experiments/20250509_quadratic.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
+python experiments/20250509_quadratic.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 5 --stage tuning
+
+
+python experiments/20250509_quadratic.py --model pure_nn --num_layers 2 --stage final;
+python experiments/20250509_quadratic.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
+python experiments/20250509_quadratic.py --model nn --rb_constraint relu --num_layers 2 --stage final;
+python experiments/20250509_quadratic.py --model kan --rb_constraint relu --num_layers 1 --stage final;
+python experiments/20250509_quadratic.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 5 --stage final
 
 
 """
@@ -52,7 +54,7 @@ class Objective(object):
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
         # FIXED hyperparameters
-        rb_synth = 8
+        rb_synth = 10
         remove_high = "ta"
         remove_high_frac = 0.2
         reco_noise_std = 0.1
@@ -72,7 +74,7 @@ class Objective(object):
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
         lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1, log=True)
-        lambda_kan_l1 = lambda_kan_entropy
+        lambda_kan_l1 = lambda_kan_entropy  # trial.suggest_float('lambda_kan_l1', 0.0, 1.0)
         lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
         lambda_kan_coefdiff = 0.0  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1, log=True)  #, log=True)
@@ -292,7 +294,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250514_abs_hidden8smooth1', type=str)
+            '--log_dir', default='./logs/20250509_quadratic', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -354,7 +356,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [0.1],
                 'weight_decay': [0.0],
-                'seed': [1, 2, 3, 4, 5],
+                'seed': [1, 2, 3, 4],
             }
         elif args.model == "nn" and args.rb_constraint == "softplus":
             search_space  = {
@@ -362,7 +364,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [1e-3],
                 'weight_decay': [1e-3],
-                'seed': [1, 2, 3, 4, 5],
+                'seed': [1, 2, 3, 4],
             }
         elif args.model == "nn" and args.rb_constraint == "relu":
             search_space  = {
@@ -370,23 +372,23 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [1e-3],
                 'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4, 5],
+                'seed': [1, 2, 3, 4],
             }
         elif args.model == "kan" and args.num_layers == 1:
             search_space  = {
                 'lambda_kan_entropy': [1e-2],
-                'lambda_kan_coefdiff2': [0.1],
-                'learning_rate': [0.1],
+                'lambda_kan_coefdiff2': [1e-2],
+                'learning_rate': [1e-2],
                 'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4, 5],
+                'seed': [1, 2, 3, 4],
             }
         elif args.model == "kan" and args.num_layers == 2:
-            search_space = {
+            search_space  = {
                 'lambda_kan_entropy': [0.1],
                 'lambda_kan_coefdiff2': [1.0],
                 'learning_rate': [1e-2],
                 'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4, 5],  # TODO
+                'seed': [ 3, 4],  # TODO
             }
     else:
         if args.model in ["nn", "pure_nn"]:

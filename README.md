@@ -86,22 +86,6 @@ Install Optuna dashboard
 ```
 pip install optuna-dashboard
 
-optuna-dashboard sqlite:///./logs/20250509_abs_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
-Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=softplus/optuna.db --port 8081
-Best 1, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.001]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=relu/optuna.db --port 8081
-Best 2, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.0001]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=1_constraint=relu/optuna.db --port 8081
-Best 11, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.01, learning_rate: 0.01, weight_decay: 0.0001]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=2_constraint=relu/optuna.db --port 8081
-Best 36, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.1, lambda_kan_coefdiff2: 1.0, learning_rate: 0.01, weight_decay: 0.0001]
-
-
 
 optuna-dashboard sqlite:///./logs/20250509_linear_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
 Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
@@ -117,6 +101,40 @@ Best 5, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda
 
 optuna-dashboard sqlite:///./logs/20250509_linear_kan_layers=1_constraint=relu/optuna.db --port 8081
 Best 8, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 1.0, learning_rate: 0.01, weight_decay: 0.0001]
+
+
+
+NEW ABS
+optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
+
+optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_nn_layers=2_constraint=softplus/optuna.db --port 8081
+
+optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_nn_layers=2_constraint=relu/optuna.db --port 8081
+
+optuna-dashboard sqlite:///./logs/20250514_abs_FIXED_TUNE_kan_layers=1_constraint=relu/optuna.db --port 8081
+Params = [seed: 0, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.1, learning_rate: 0.1, weight_decay: 0.0001]
+
+optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_kan_layers=2_constraint=relu/optuna.db --port 8081
+
+
+
+
+OLD ABS
+
+optuna-dashboard sqlite:///./logs/20250509_abs_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
+Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=softplus/optuna.db --port 8081
+Best 1, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.001]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=relu/optuna.db --port 8081
+Best 2, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.0001]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=1_constraint=relu/optuna.db --port 8081
+Best 11, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.01, learning_rate: 0.01, weight_decay: 0.0001]
+
+optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=2_constraint=relu/optuna.db --port 8081
+Best 36, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.1, lambda_kan_coefdiff2: 1.0, learning_rate: 0.01, weight_decay: 0.0001]
 
 
 

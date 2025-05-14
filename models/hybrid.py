@@ -58,6 +58,7 @@ class Q10Model(pl.LightningModule):
             kan_noise: int = 0.3,
             kan_base_fun: str = 'zero',
             kan_affine_trainable: bool = True, 
+            kan_absolute_deviation: bool = True,
             rb_constraint: str = 'softplus',
             dropout: float = 0.,
             activation: str = 'relu',  # 'tanh',
@@ -100,6 +101,7 @@ class Q10Model(pl.LightningModule):
             'kan_noise',
             'kan_base_fun',
             'kan_affine_trainable',
+            'kan_absolute_deviation',
             'rb_constraint'
         )
 
@@ -139,9 +141,10 @@ class Q10Model(pl.LightningModule):
             
             # Version with mult nodes
             # layer_sizes = [len(self.features)] + [[hidden_dim // 2, hidden_dim // 2]] * (num_layers - 1) + [len(self.targets)]
-            self.nn = kan.KAN(width=layer_sizes, grid=kan_grid, k=3, seed=42, device=self.device,  # residual=residual,
+            self.nn = kan.KAN(width=layer_sizes, grid=kan_grid, k=3, seed=torch.initial_seed(), device=self.device,  # residual=residual,
                                input_size=layer_sizes[0], noise_scale=kan_noise,
-                               base_fun=kan_base_fun, affine_trainable=kan_affine_trainable, grid_eps=1.0, 
+                               base_fun=kan_base_fun, affine_trainable=kan_affine_trainable,
+                               absolute_deviation=kan_absolute_deviation, grid_eps=1.0, 
                                grid_margin=kan_grid_margin, drop_rate=dropout, drop_mode=('none' if dropout == 0.0 else 'postact'))
         else:
             raise ValueError("Invalid model")
@@ -307,6 +310,8 @@ class Q10Model(pl.LightningModule):
 
         batch, idx = batch
 
+        # if batch_idx == 1:
+        #     print("Train step", idx[0:2], self.input_norm(batch)[0:2])
         # print("TRAIN STEP: Unnormalized", [f"{var} mean {x.mean()} std {x.std()}" for var, x in batch.items()])
         # print("TRAIN STEP: Normalized means", self.input_norm(batch).mean(dim=0), "stds", self.input_norm(batch).std(dim=0))
 
@@ -822,7 +827,7 @@ class Q10Model(pl.LightningModule):
                 {
                     'params': [self.q10, self.beta],
                     'weight_decay': 0.0,
-                    'learning_rate': self.hparams.learning_rate * 100  # 10
+                    'learning_rate': self.hparams.learning_rate * 10
                 }
             ]
         )

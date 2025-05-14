@@ -202,7 +202,7 @@ class FluxData(LightningDataModule):
                 ds["rb"] = np.abs((old_rb - mean_val) / std_val)
 
                 # Construct true KAN for true feature importance
-                true_kan = kan.KAN(width=[len(features), 1, len(targets)], device="cpu", base_fun="identity")
+                true_kan = kan.KAN(width=[len(features), 1, len(targets)], device="cpu", base_fun="identity", seed=torch.initial_seed())
 
                 # set mask to 0 to ignore spline (learnable) portion and use symbolic only
                 true_kan.act_fun[0].mask = torch.zeros_like(true_kan.act_fun[0].mask)
@@ -251,7 +251,7 @@ class FluxData(LightningDataModule):
                 ds["rb"] = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"] + 1.03506858
 
                 # construct true KAN for true feature importance
-                true_kan = kan.KAN(width=[len(features), len(targets)], device="cpu", base_fun="identity")
+                true_kan = kan.KAN(width=[len(features), len(targets)], device="cpu", base_fun="identity", seed=torch.initial_seed())
 
                 # set mask to 0 to ignore spline (learnable) portion and use symbolic only
                 true_kan.act_fun[0].mask = torch.zeros_like(true_kan.act_fun[0].mask)
@@ -294,6 +294,57 @@ class FluxData(LightningDataModule):
                 self.true_relationships = true_kan.edge_scores[0].detach().cpu().numpy().T  # transpose to [n_inputs, n_params]
                 self.true_relationships = self.true_relationships / self.true_relationships.sum(axis=0, keepdims=True)
                 print("True relationships", self.true_relationships)
+            elif rb_synth == 10:
+                # linear followed by quadratic
+                old_rb = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"]
+                mean_val, std_val = old_rb.mean().item(), old_rb.std().item()
+                ds["rb"] = ((old_rb - mean_val) / std_val) ** 2
+
+                # Construct true KAN for true feature importance
+                true_kan = kan.KAN(width=[len(features), 1, len(targets)], device="cpu", base_fun="identity", seed=torch.initial_seed())
+
+                # set mask to 0 to ignore spline (learnable) portion and use symbolic only
+                true_kan.act_fun[0].mask = torch.zeros_like(true_kan.act_fun[0].mask)
+                true_kan.act_fun[1].mask = torch.zeros_like(true_kan.act_fun[1].mask)
+                true_kan.save_acts = True
+                def f1(x):
+                    return 0.0075*x
+                def f2(x):
+                    return -0.00375*x
+                def f3(x):
+                    return ((x - mean_val) / std_val) ** 2
+                true_kan.fix_symbolic(0, 0, 0, fun_name=f1, random=False, fit_params_bool=False, verbose=False)
+                true_kan.fix_symbolic(0, 1, 0, fun_name=f2, random=False, fit_params_bool=False, verbose=False)
+                true_kan.fix_symbolic(1, 0, 0, fun_name=f3, random=False, fit_params_bool=False, verbose=False)
+
+                with torch.no_grad():
+                    input_features = torch.tensor(np.stack([ds["sw_pot"].values, ds["dsw_pot"].values, ds["ta"].values], axis=1), dtype=torch.float32)
+                    prescribed_para = true_kan(input_features)
+
+                # Plot true functional relationships
+                true_kan.attribute()
+                true_kan.node_attribute()
+                true_kan.plot(folder=os.path.join(plot_dir, "splines"), in_vars=features, out_vars=targets)  #  scale=5, varscale=0.13)
+                plt.savefig(os.path.join(plot_dir, f"TRUE_kan_plot.png"))
+                plt.close()
+
+                # For now, use PartialDependenceVariance to measure importance
+                # of each functional relationship. There may be a better way
+                # but not trivial for multi-layer KAN.
+                from alibi.explainers import ALE, PartialDependenceVariance, plot_ale, plot_pd_variance
+                @torch.no_grad()
+                def predictor(X: np.ndarray) -> np.ndarray:
+                    X = torch.as_tensor(X, device="cpu")
+                    return true_kan(X).cpu().numpy()
+
+                with warnings.catch_warnings():  # suppress warnings inside alibi code
+                    warnings.simplefilter("ignore")
+                    pd_variance = PartialDependenceVariance(predictor=predictor,
+                                                            feature_names=features,
+                                                            target_names=targets)
+                    exp_importance = pd_variance.explain(input_features.detach().cpu().numpy(), method='importance')
+                    importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
+                    self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
             else:
                 raise ValueError(f"Invalid value of rb_synth, should be integer between [0, 7]. Got {rb_synth}.")
 
