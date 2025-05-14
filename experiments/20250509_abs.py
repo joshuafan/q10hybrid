@@ -62,9 +62,9 @@ class Objective(object):
         use_ta = True
         kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
-        kan_absolute_deviation = True
+        kan_absolute_deviation = False
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
-        kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
+        kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
         kan_noise = 0.3  # trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
         lambda_jacobian_l05 = 0.0  # trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
@@ -292,7 +292,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250514_abs_hidden8smooth1', type=str)
+            '--log_dir', default='./logs/20250514_abs_hidden8smooth1_debug', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -385,7 +385,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_entropy': [0.1],
                 'lambda_kan_coefdiff2': [1.0],
                 'learning_rate': [1e-2],
-                'weight_decay': [1e-4],
+                'weight_decay': [0],  # NOTE
                 'seed': [1, 2, 3, 4, 5],  # TODO
             }
     else:
