@@ -62,7 +62,7 @@ class Objective(object):
         use_ta = True
         kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
-        kan_absolute_deviation = False
+        kan_absolute_deviation = True
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
         kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
@@ -382,8 +382,8 @@ def main(parser: ArgumentParser = None, **kwargs):
             }
         elif args.model == "kan" and args.num_layers == 2:
             search_space = {
-                'lambda_kan_entropy': [0.1],
-                'lambda_kan_coefdiff2': [1.0],
+                'lambda_kan_entropy': [1e-2],
+                'lambda_kan_coefdiff2': [0.1],
                 'learning_rate': [1e-2],
                 'weight_decay': [0],  # NOTE
                 'seed': [1, 2, 3, 4, 5],  # TODO
