@@ -217,10 +217,11 @@ class Q10Model(pl.LightningModule):
         # Physical part.
         reco = rb * self.q10 ** (0.1 * (x['ta'] - self.ta_ref))
         if torch.isnan(reco).any():
-            print("Reco contained nan", reco)
-            print("Rb", rb)
+            print("Reco contained nan", reco[0:10])
+            print("Rb", rb[0:10])
             print("Q10", self.q10)
-            print("ta_ref", self.ta_ref)
+            print("Hparams", self.hparams)
+            exit(1)
 
         return reco, rb, z
 
