@@ -5,7 +5,7 @@ export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 
 python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 5 --stage tuning
+python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning
 
 
 # pure NN
@@ -60,9 +60,10 @@ class Objective(object):
         q10_init = 0.5
         seed = trial.suggest_int('seed', 0, 5)
         use_ta = True
-        kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
+        kan_base_fun = "identity" # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
-        kan_absolute_deviation = True
+        kan_absolute_deviation = False
+        kan_flat_entropy = True
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
         kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
@@ -72,7 +73,7 @@ class Objective(object):
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
         lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1, log=True)
-        lambda_kan_l1 = lambda_kan_entropy
+        lambda_kan_l1 = 1e-2  # lambda_kan_entropy
         lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
         lambda_kan_coefdiff = 0.0  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1, log=True)  #, log=True)
@@ -163,6 +164,7 @@ class Objective(object):
             kan_base_fun=kan_base_fun,
             kan_affine_trainable=kan_affine_trainable,
             kan_absolute_deviation=kan_absolute_deviation,
+            kan_flat_entropy=kan_flat_entropy,
             num_steps=len(train_loader) * max_epochs,
             model=self.args.model,
             rb_constraint=self.args.rb_constraint,
@@ -182,7 +184,7 @@ class Objective(object):
             callbacks=[
                 EarlyStopping(
                     monitor='valid_loss',
-                    patience=10,
+                    patience=20,  # 10,
                     min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',
@@ -292,7 +294,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250514_abs_hidden8smooth1_debug', type=str)
+            '--log_dir', default='./logs/20250514_abs_FINAL', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -382,8 +384,8 @@ def main(parser: ArgumentParser = None, **kwargs):
             }
         elif args.model == "kan" and args.num_layers == 2:
             search_space = {
-                'lambda_kan_entropy': [1e-2],
-                'lambda_kan_coefdiff2': [0.1],
+                'lambda_kan_entropy': [1e-1],
+                'lambda_kan_coefdiff2': [1],
                 'learning_rate': [1e-2],
                 'weight_decay': [0],  # NOTE
                 'seed': [1, 2, 3, 4, 5],  # TODO
@@ -395,15 +397,15 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'weight_decay': [0, 1e-4, 1e-3],
                 'lambda_kan_entropy': [1e-10],
                 'lambda_kan_coefdiff2': [1e-10],
-                'seed': [0],
+                'seed': [1],
             }
         elif args.model == "kan":
             search_space = {
-                'learning_rate': [1e-3, 1e-2, 1e-1],
-                'weight_decay': [1e-4],
+                'learning_rate': [1e-2, 1e-1],
+                'weight_decay': [0],
                 'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
                 'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
-                'seed' : [0],
+                'seed' : [1],
             }
             # search_space = {
             #     'learning_rate': [1e-2],

@@ -65,6 +65,7 @@ class Objective(object):
         kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_absolute_deviation = True
+        kan_flat_entropy = True
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
         kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
@@ -74,7 +75,7 @@ class Objective(object):
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
         lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1, log=True)
-        lambda_kan_l1 = lambda_kan_entropy  # trial.suggest_float('lambda_kan_l1', 0.0, 1.0)
+        lambda_kan_l1 = 1e-2  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_l1', 0.0, 1.0)
         lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
         lambda_kan_coefdiff = 0.0  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1, log=True)  #, log=True)
@@ -165,6 +166,7 @@ class Objective(object):
             kan_base_fun=kan_base_fun,
             kan_affine_trainable=kan_affine_trainable,
             kan_absolute_deviation=kan_absolute_deviation,
+            kan_flat_entropy=kan_flat_entropy,
             num_steps=len(train_loader) * max_epochs,
             model=self.args.model,
             rb_constraint=self.args.rb_constraint,
@@ -184,7 +186,7 @@ class Objective(object):
             callbacks=[
                 EarlyStopping(
                     monitor='valid_loss',
-                    patience=10,
+                    patience=20,
                     min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',
@@ -364,7 +366,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [1e-3],
                 'weight_decay': [1e-3],
-                'seed': [1, 2, 3, 4],
+                'seed': [1, 2, 3, 4, 5],
             }
         elif args.model == "nn" and args.rb_constraint == "relu":
             search_space  = {
@@ -372,7 +374,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [1e-3],
                 'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4],
+                'seed': [1, 2, 3, 4, 5],
             }
         elif args.model == "kan" and args.num_layers == 1:
             search_space  = {
@@ -380,15 +382,15 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-2],
                 'learning_rate': [1e-2],
                 'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4],
+                'seed': [1, 2, 3, 4, 5],
             }
         elif args.model == "kan" and args.num_layers == 2:
             search_space  = {
                 'lambda_kan_entropy': [0.1],
-                'lambda_kan_coefdiff2': [1.0],
+                'lambda_kan_coefdiff2': [1e-1],
                 'learning_rate': [1e-2],
                 'weight_decay': [1e-4],
-                'seed': [ 3, 4],  # TODO
+                'seed': [1, 2, 3, 4, 5],  # TODO
             }
     else:
         if args.model in ["nn", "pure_nn"]:
@@ -397,7 +399,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'weight_decay': [0, 1e-4, 1e-3],
                 'lambda_kan_entropy': [1e-10],
                 'lambda_kan_coefdiff2': [1e-10],
-                'seed': [0],
+                'seed': [1],
             }
         elif args.model == "kan":
             search_space = {
@@ -405,7 +407,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'weight_decay': [1e-4],
                 'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
                 'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
-                'seed' : [0],
+                'seed' : [1],
             }
             # search_space = {
             #     'learning_rate': [1e-2],
