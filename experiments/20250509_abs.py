@@ -64,19 +64,19 @@ class Objective(object):
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_absolute_deviation = False
         kan_flat_entropy = True
-        kan_grid = 15  # trial.suggest_int('kan_grid', 3, 50)
-        kan_grid_margin = 1.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
+        kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
+        kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
         kan_noise = 0.3  # trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
         lambda_jacobian_l05 = 0.0  # trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
 
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
-        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1, log=True)
-        lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1, log=True)  #  1e-2  # lambda_kan_entropy
+        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1)  # , log=True)
+        lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1) # , log=True)  #  1e-2  # lambda_kan_entropy
         lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
-        lambda_kan_coefdiff = trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
-        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1, log=True)  #, log=True)
+        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)  # , log=True)  #, log=True)
+        lambda_kan_coefdiff = lambda_kan_coefdiff2  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
         lambda_jacobian_l1 = 0.0  # trial.suggest_float('lambda_jacobian_l1', 0.0, 1.0)
 
         # Optimization
@@ -294,7 +294,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250514_abs_ZERO_COEFDIFF12_AIDA_FINAL', type=str)
+            '--log_dir', default='./logs/20250515_abs_ZERO_COEF12_STDEV_TUNING', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -405,9 +405,9 @@ def main(parser: ArgumentParser = None, **kwargs):
             search_space = {
                 'learning_rate': [1e-2],
                 'weight_decay': [0],
-                'lambda_kan_entropy': [1e-3, 1e-2, 1e-1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-                'lambda_kan_l1': [1e-3, 1e-2],
-                'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
+                'lambda_kan_entropy': [1e-3],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+                'lambda_kan_l1': [0],
+                'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
                 'seed': [1],
             }
             # search_space = {

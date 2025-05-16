@@ -342,7 +342,7 @@ class Q10Model(pl.LightningModule):
         if z is not None:
             param_violation_loss = torchf.relu(-z).sum()
             if self.hparams.rb_constraint == "relu":
-                self.log('param_violation_loss', param_violation_loss, prog_bar=True)
+                self.log('param_violation_loss', param_violation_loss, prog_bar=False)
                 total_loss += (self.hparams.lambda_param_violation * param_violation_loss)
         else:
             assert self.model in ["pure_nn", "pure_kan"], "If unconstrained Rb is None, model must be pure_nn or pure_kan"
@@ -361,12 +361,12 @@ class Q10Model(pl.LightningModule):
         jacobian_l1_loss = jacobian.abs().mean()
         jacobian_l05_loss = l12_smooth(jacobian)
         jacobian_sparsity = (jacobian.abs() < 1e-5).float().mean()
-        self.log('jacobian_sparsity', jacobian_sparsity, prog_bar=True)
+        self.log('jacobian_sparsity', jacobian_sparsity, prog_bar=False)
         if self.hparams.lambda_jacobian_l1 > 0:
-            self.log('jacobian_l1', jacobian_l1_loss, prog_bar=True)  # on_step=False, on_epoch=True, prog_bar=False, logger=True)
+            self.log('jacobian_l1', jacobian_l1_loss, prog_bar=False)  # on_step=False, on_epoch=True, prog_bar=False, logger=True)
             total_loss += (self.hparams.lambda_jacobian_l1 * jacobian_l1_loss)
         if self.hparams.lambda_jacobian_l05 > 0:
-            self.log('jacobian_l05', jacobian_l05_loss, prog_bar=True)
+            self.log('jacobian_l05', jacobian_l05_loss, prog_bar=False)
             total_loss += (self.hparams.lambda_jacobian_05 * jacobian_l05_loss)
 
         # KAN-related losses
@@ -377,27 +377,27 @@ class Q10Model(pl.LightningModule):
                                                                                                               return_indiv=True, flat_entropy=self.hparams.kan_flat_entropy)
             _, kan_node_entropy_loss, _, _, _ = self.nn.reg(reg_metric='node_influence_on_output', lamb_l1=0, lamb_entropy=1., lamb_coef=0., lamb_coefdiff=0., return_indiv=True)
             if self.hparams.lambda_kan_l1 > 0:
-                self.log('kan_l1_loss', kan_l1_loss, prog_bar=True)
+                self.log('kan_l1_loss', kan_l1_loss, prog_bar=False)
                 # new_lambda = self.hparams.lambda_kan_l1  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_l1  # max(0, self.hparams.lambda_kan_l1 * (self.current_epoch - 20))
                 # total_loss += (new_lambda * kan_l1_loss)
                 total_loss += (self.hparams.lambda_kan_l1 * kan_l1_loss)
             if self.hparams.lambda_kan_entropy > 0:
-                self.log('kan_entropy_loss', kan_entropy_loss, prog_bar=True)
+                self.log('kan_entropy_loss', kan_entropy_loss, prog_bar=False)
                 # new_lambda = self.hparams.lambda_kan_entropy  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_entropy   #max(0, self.hparams.lambda_kan_entropy * (self.current_epoch - 20))
                 # total_loss += (new_lambda * kan_entropy_loss)
                 total_loss += (self.hparams.lambda_kan_entropy * kan_entropy_loss)
             if self.hparams.lambda_kan_node_entropy > 0:
-                self.log('lambda_kan_node_entropy', kan_node_entropy_loss, prog_bar=True)
+                self.log('lambda_kan_node_entropy', kan_node_entropy_loss, prog_bar=False)
                 # new_lambda = self.hparams.lambda_kan_node_entropy
                 # total_loss += (new_lambda * kan_node_entropy_loss)
                 total_loss += (self.hparams.lambda_kan_node_entropy * kan_node_entropy_loss)
             if self.hparams.lambda_kan_coefdiff > 0:
-                self.log('kan_coefdiff_loss', kan_coefdiff_loss, prog_bar=True)
+                self.log('kan_coefdiff_loss', kan_coefdiff_loss, prog_bar=False)
                 # new_lambda = self.hparams.lambda_kan_coefdiff  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff   # max(0, self.hparams.lambda_kan_coefdiff * (self.current_epoch - 20))
                 # total_loss += (new_lambda * kan_coefdiff_loss)
                 total_loss += (self.hparams.lambda_kan_coefdiff * kan_coefdiff_loss)            
             if self.hparams.lambda_kan_coefdiff2 > 0:
-                self.log('kan_coefdiff2_loss', kan_coefdiff2_loss, prog_bar=True)
+                self.log('kan_coefdiff2_loss', kan_coefdiff2_loss, prog_bar=False)
                 # new_lambda = self.hparams.lambda_kan_coefdiff2  # 0 if self.current_epoch < 20 else self.hparams.lambda_kan_coefdiff2   # max(0, self.hparams.lambda_kan_coefdiff2 * (self.current_epoch - 20))
                 # total_loss += (new_lambda * kan_coefdiff2_loss)
                 total_loss += (self.hparams.lambda_kan_coefdiff2 * kan_coefdiff2_loss)
