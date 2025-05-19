@@ -76,7 +76,7 @@ class Objective(object):
         lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1) # , log=True)  #  1e-2  # lambda_kan_entropy
         lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)  # , log=True)  #, log=True)
-        lambda_kan_coefdiff = trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
+        lambda_kan_coefdiff = trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
         lambda_jacobian_l1 = 0.0  # trial.suggest_float('lambda_jacobian_l1', 0.0, 1.0)
 
         # Optimization
@@ -294,7 +294,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250514_abs_ZERO_MORELIKE', type=str)
+            '--log_dir', default='./logs/20250518_abs_reproattempt', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -402,13 +402,22 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'seed': [1],
             }
         elif args.model == "kan":
+            # search_space = {
+            #     'learning_rate': [1e-2],
+            #     'weight_decay': [0],
+            #     'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+            #     'lambda_kan_l1': [1e-2],
+            #     'lambda_kan_coefdiff2': [1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
+            #     'lambda_kan_coefdiff': [0],
+            #     'seed': [1],
+            # }
             search_space = {
                 'learning_rate': [1e-2],
                 'weight_decay': [0],
-                'lambda_kan_entropy': [1e-2],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-                'lambda_kan_l1': [1e-2],
-                'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
-                'lambda_kan_coefdiff': [0],
+                'lambda_kan_entropy': [1e-3, 1e-2],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+                'lambda_kan_l1': [0],
+                'lambda_kan_coefdiff2': [1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
+                'lambda_kan_coefdiff': [1e-1, 1],
                 'seed': [1],
             }
             # search_space = {
