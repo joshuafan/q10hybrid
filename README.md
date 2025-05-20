@@ -155,6 +155,11 @@ http://127.0.0.1:8081/
 
 ```
 
+## Branches (joshuafan)
+`master` branch contains everything used in the ScIReN paper.
+`20250519_messy` contains some experimental features such as Jacobian L0.5, Jacobian L1 regularization, SENN, node entropy
+
+
 
 
 Run experiments:

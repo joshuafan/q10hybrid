@@ -41,26 +41,9 @@ TRAINER_ARGS = dict(
 )
 
 
-def set_seeds(seed):
-    """
-    Attempts to set all random seeds to improve reproducibility.
-    """
-    import random
-    import numpy as np
-    import torch
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-
-
 class Objective(object):
     def __init__(self, args):
         self.args = args
-
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
         # FIXED hyperparameters
@@ -75,26 +58,23 @@ class Objective(object):
         kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_absolute_deviation = True
+        kan_flat_entropy = True
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
         kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
         kan_noise = 0.3  # trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
-        lambda_jacobian_l05 = 0.0  # trial.suggest_float('lambda_jacobian_l05', 0.0, 100.0)
 
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
-        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1, log=True)
-        lambda_kan_l1 = lambda_kan_entropy
-        lambda_kan_node_entropy = 0.0  # trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-2, log=True)
-        lambda_kan_coefdiff = 0.0  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
-        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1, log=True)  #, log=True)
-        lambda_jacobian_l1 = 0.0  # trial.suggest_float('lambda_jacobian_l1', 0.0, 1.0)
+        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1)  #, log=True)
+        lambda_kan_l1 = lambda_kan_entropy  # trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1) # , log=True)  #  1e-2  # lambda_kan_entropy
+        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)  # , log=True)  #, log=True)
+        lambda_kan_coefdiff = 0.0  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
 
         # Optimization
         learning_rate = trial.suggest_float('learning_rate', 1e-2, 0.1, log=True)
         weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2)  # , log=True)
         dropout = 0.0  # trial.suggest_float('dropout', 0.0, 0.5)
-        # lambda_robustness = trial.suggest_float('lambda_robustness', 0.0, 100.0)
 
         if use_ta:
             features = ['sw_pot', 'dsw_pot', 'ta']
@@ -102,9 +82,6 @@ class Objective(object):
             features = ['sw_pot', 'dsw_pot']
 
         pl.seed_everything(seed)
-        # set_seeds(seed)
-        # import torch
-        # print("SEED", seed, torch.initial_seed())
 
         # Further variables used in the hybrid model.
         physical = ['ta']
@@ -166,11 +143,8 @@ class Objective(object):
             lambda_param_violation=lambda_param_violation,
             lambda_kan_l1=lambda_kan_l1,
             lambda_kan_entropy=lambda_kan_entropy,
-            lambda_kan_node_entropy=lambda_kan_node_entropy,
             lambda_kan_coefdiff=lambda_kan_coefdiff,
             lambda_kan_coefdiff2=lambda_kan_coefdiff2,
-            lambda_jacobian_l1=lambda_jacobian_l1,
-            lambda_jacobian_l05=lambda_jacobian_l05,
             kan_grid=kan_grid,
             kan_update_grid=kan_update_grid,
             kan_grid_margin=kan_grid_margin,
@@ -178,6 +152,7 @@ class Objective(object):
             kan_base_fun=kan_base_fun,
             kan_affine_trainable=kan_affine_trainable,
             kan_absolute_deviation=kan_absolute_deviation,
+            kan_flat_entropy=kan_flat_entropy,
             num_steps=len(train_loader) * max_epochs,
             model=self.args.model,
             rb_constraint=self.args.rb_constraint,
@@ -186,18 +161,15 @@ class Objective(object):
         # ------------
         # training
         # ------------
-        # print("Args", self.args)
-        # exit(1)
         # trainer = pl.Trainer.from_argparse_args(
         #     self.args,
-        
         trainer = pl.Trainer(
             default_root_dir=self.args.log_dir,
             **TRAINER_ARGS,
             callbacks=[
                 EarlyStopping(
                     monitor='valid_loss',
-                    patience=10,
+                    patience=20,
                     min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',
@@ -244,7 +216,6 @@ class Objective(object):
         #                                     model=self.args.model,
         #                                     rb_constraint=self.args.rb_constraint,
         #                                     true_relationships=fluxdata.true_relationships)
-        # print("Q10", model.q10)
         # val_metrics_dict = trainer.validate(model=model, dataloaders=val_loader)[0]
         # test_metrics_dict = trainer.test(model=model, dataloaders=test_loader)[0]
         # exit(1)
@@ -268,13 +239,11 @@ class Objective(object):
             with open(results_summary_file, mode='w') as f:
                 csv_writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
                 csv_writer.writerow(['time', 'trial_number', 'params', 'seed'] + VAL_METRICS + TEST_METRICS)
-        #command_string = " ".join(sys.argv)
-        #data_string = f"Fold {args.cross_val_idx} {args.split} (data_seed = {args.data_seed}, n_datapoints = {args.n_datapoints})"
+
         # Add a row to the summary csv file
         with open(results_summary_file, mode='a+') as f:
             csv_writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            # best_model_path = data_dir_output + 'neural_network/' + job_id + '/opt_nn_' + job_id  + '.pt'
-            csv_writer.writerow([trial.datetime_start, trial.number, trial.params, seed] + [val_metrics_dict.get(m) for m in VAL_METRICS] + [test_metrics_dict.get(m) for m in TEST_METRICS])
+            csv_writer.writerow([trial.datetime_start, trial.number, model.hparams, seed] + [val_metrics_dict.get(m) for m in VAL_METRICS] + [test_metrics_dict.get(m) for m in TEST_METRICS])
 
         # Store predictions.
         ds = fluxdata.add_scalar_record(model.ds_val, varname='q10', x=model.q10_history)
@@ -324,7 +293,7 @@ def main(parser: ArgumentParser = None, **kwargs):
         parser = ArgumentParser()
 
     parser = Objective.add_project_specific_args(parser)
-    # parser = pl.Trainer.add_argparse_args(parser)  # TODO
+    # parser = pl.Trainer.add_argparse_args(parser)
     parser = Q10Model.add_model_specific_args(parser)
     parser.add_argument('--create_study', action='store_true', help='create new study (deletes old) and exits')
     # parser.add_argument('--single_seed', action='store_true', help='use only one seed instead of (1, ..., 10).')
@@ -339,28 +308,6 @@ def main(parser: ArgumentParser = None, **kwargs):
     # # ------------
     # # study setup
     # # ------------
-    # search_space = {
-    #     'subset_frac': [1.0],
-    #     'q10_init': [0.5],  # [0.5, 1.5, 2.5],
-    #     'seed': [0] if args.single_seed else [i for i in range(10)],
-    #     'dropout': [0.0],  # , 0.2, 0.4, 0.6],
-    #     'use_ta': [True],  # [True, False]
-    #     'lambda_param_violation': [1.0],  # [1.0],
-    #     'lambda_kan_l1': [0.0],  # = trial.suggest_float('lambda_kan_l1', 0.0, 2.0)
-    #     'lambda_kan_entropy': [0.1],  # = trial.suggest_float('lambda_kan_entropy', 0.0, 4.0)
-    #     'lambda_kan_coefdiff': [0.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
-    #     'lambda_kan_coefdiff2': [0.0],  # = trial.suggest_float('lambda_kan_coefdiff', 0.0, 2.0)
-    #     'kan_grid': [3],  #trial.suggest_int('kan_grid', 3, 50)
-    #     'kan_update_grid': [1],
-    #     'kan_grid_margin': [1.0],  # = trial.suggest_float('kan_grid_margin', 0.0, 2.0)
-    #     'kan_noise': [0.3],  # = trial.suggest_float('kan_noise', 0.1, 0.5)
-    #     'kan_base_fun': ['silu_identity'],  # = trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity'])
-    #     'kan_affine_trainable': [True],  # = trial.suggest_categorical('kan_affine_trainable', [True, False])
-    #     'lambda_jacobian_l1': [0.1],  #  [0.001, 0.01, 0.1, 1.0, 10.0]
-    #     'lambda_jacobian_l05': [0],
-    #     # 'lambda_robustness': [0],
-    # }
-
     # Search spaces
     if args.stage == "final":
         if args.model == "pure_nn":
@@ -369,7 +316,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'learning_rate': [0.1],
                 'weight_decay': [0.0],
-                'seed': [1,2,3,4, 5],
+                'seed': [1, 2, 3, 4, 5],
             }
         elif args.model == "nn" and args.rb_constraint == "softplus":
             search_space  = {
@@ -441,7 +388,7 @@ def main(parser: ArgumentParser = None, **kwargs):
         study = optuna.create_study(
             study_name=os.path.basename(args.log_dir),
             storage=sql_path,
-            sampler=optuna.samplers.GridSampler(search_space),  # optuna.samplers.GPSampler(seed=42),  # 
+            sampler=optuna.samplers.GridSampler(search_space),
             direction='minimize',
             load_if_exists=False)
 
@@ -467,5 +414,3 @@ def main(parser: ArgumentParser = None, **kwargs):
 
 if __name__ == '__main__':
     main()
-
-
