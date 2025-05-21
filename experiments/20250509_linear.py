@@ -3,7 +3,14 @@ Removing top 20% of ta from train set
 
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
-# pure NN
+# Tuning
+python experiments/20250509_linear.py --model pure_nn --num_layers 2 --stage tuning;
+python experiments/20250509_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
+python experiments/20250509_linear.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
+python experiments/20250509_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage tuning;
+python experiments/20250509_linear.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
+
+# Final
 python experiments/20250509_linear.py --model pure_nn --num_layers 2 --stage final;
 python experiments/20250509_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
 python experiments/20250509_linear.py --model nn --rb_constraint relu --num_layers 2 --stage final;
@@ -367,14 +374,6 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
                 'seed' : [0],
             }
-            # search_space = {
-            #     'learning_rate': [1e-2],
-            #     'weight_decay': [1e-4],
-            #     'lambda_kan_l1': [1e-2],
-            #     'lambda_kan_entropy': [0.1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-            #     'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
-            #     'seed' : [0],
-            # }
 
     # Modify log_dir
     args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'

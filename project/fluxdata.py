@@ -136,12 +136,6 @@ class FluxData(LightningDataModule):
 
         super().__init__()
 
-        # OPTIONAL Generate new synthetic labels
-        # print("RANGES")
-        # print("SW_POT", ds["sw_pot"].min(), ds["sw_pot"].max(), ds["sw_pot"].mean(), ds["sw_pot"].std())
-        # print("DSWPOT", ds["dsw_pot"].min(), ds["dsw_pot"].max(), ds["dsw_pot"].mean(), ds["dsw_pot"].std())
-        # print("TA", ds["ta"].min(), ds["ta"].max(), ds["ta"].mean(), ds["ta"].std())
-
         # Versions of variables between (0, 1) for generating synthetic data
         ds["sw_pot_norm"] = (ds["sw_pot"] - ds["sw_pot"].min()) / (ds["sw_pot"].max() - ds["sw_pot"].min())
         ds["dsw_pot_norm"] = (ds["dsw_pot"] - ds["dsw_pot"].min()) / (ds["dsw_pot"].max() - ds["dsw_pot"].min())
@@ -283,14 +277,6 @@ class FluxData(LightningDataModule):
                     X = torch.as_tensor(X, device="cpu")
                     return true_kan(X).cpu().numpy()
 
-                # with warnings.catch_warnings():  # suppress warnings inside alibi code
-                #     warnings.simplefilter("ignore")
-                #     pd_variance = PartialDependenceVariance(predictor=predictor,
-                #                                             feature_names=features,
-                #                                             target_names=targets)
-                #     exp_importance = pd_variance.explain(input_features.detach().cpu().numpy(), method='importance')
-                #     importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
-                #     self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
                 self.true_relationships = true_kan.edge_scores[0].detach().cpu().numpy().T  # transpose to [n_inputs, n_params]
                 self.true_relationships = self.true_relationships / self.true_relationships.sum(axis=0, keepdims=True)
                 print("True relationships", self.true_relationships)

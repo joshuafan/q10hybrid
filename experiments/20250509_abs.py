@@ -3,12 +3,14 @@ Removing top 20% of ta from train set
 
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
-
+# Tuning
+python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage tuning;
+python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
+python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
 python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
 python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning
 
-
-# pure NN
+# Final
 python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage final;
 python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
 python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
@@ -174,7 +176,7 @@ class Objective(object):
             callbacks=[
                 EarlyStopping(
                     monitor='valid_loss',
-                    patience=10,
+                    patience=20,
                     min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',

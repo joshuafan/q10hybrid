@@ -51,7 +51,7 @@ class Objective(object):
         q10_init = 0.5
         seed = trial.suggest_int('seed', 0, 5)
         use_ta = True
-        kan_base_fun = "zero" # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
+        kan_base_fun = "zero" if (self.args.model == "kan" and self.args.num_layers == 2) else "identity"
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_absolute_deviation = True
         kan_flat_entropy = True
@@ -272,7 +272,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250518_abs_ABLATION', type=str)
+            '--log_dir', default='./logs/20250520_abs_ABLATION', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -323,12 +323,13 @@ def main(parser: ArgumentParser = None, **kwargs):
         remove_l1['lambda_kan_l1'] = [0.0]
         remove_entropy = copy.deepcopy(base_params)
         remove_entropy['lambda_kan_entropy'] = [0.0]
-        remove_out_of_range = copy.deepcopy(base_params)
-        remove_out_of_range['lambda_param_violation'] = [0.0]
+
+        remove_param_violation = copy.deepcopy(base_params)
+        remove_param_violation['lambda_param_violation'] = [0.0]
         small_grid = copy.deepcopy(base_params)
         small_grid['kan_grid'] = [3]
-        small_grid['kan_coefdiff2'] = [0, 1]
-        search_spaces = [base_params, remove_coefdiff2, remove_l1, remove_entropy, remove_out_of_range, small_grid]
+        small_grid['lambda_kan_coefdiff2'] = [0, 1]
+        search_spaces = [base_params, remove_coefdiff2, remove_l1, remove_entropy, remove_param_violation, small_grid]
  
     else:
         raise NotImplementedError()
