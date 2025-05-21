@@ -4,16 +4,7 @@ Removing top 20% of ta from train set
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning
-
-
-# pure NN
-python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final
+python experiments/20250509_abs_ablation.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final
 
 
 """
@@ -60,19 +51,19 @@ class Objective(object):
         q10_init = 0.5
         seed = trial.suggest_int('seed', 0, 5)
         use_ta = True
-        kan_base_fun = "zero" if (self.args.model == "kan" and self.args.num_layers == 2) else "identity"
+        kan_base_fun = "zero" # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_absolute_deviation = True
         kan_flat_entropy = True
-        kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
+        kan_grid = trial.suggest_int('kan_grid', 3, 30)
         kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
         kan_update_grid = 1  # trial.suggest_categorical('kan_update_grid', [0, 1])
         kan_noise = 0.3  # trial.suggest_float('kan_noise', 0.1, 0.5, log=True)
 
         # Loss weights / model complexity
-        lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
+        lambda_param_violation = trial.suggest_float('lambda_param_violation', 0, 1) if self.args.rb_constraint == 'relu' else 0.0
         lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1)  #, log=True)
-        lambda_kan_l1 = lambda_kan_entropy  # trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1) # , log=True)  #  1e-2  # lambda_kan_entropy
+        lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1) # , log=True)  #  1e-2  # lambda_kan_entropy
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)  # , log=True)  #, log=True)
         lambda_kan_coefdiff = 0.0  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
 
@@ -174,7 +165,7 @@ class Objective(object):
             callbacks=[
                 EarlyStopping(
                     monitor='valid_loss',
-                    patience=10,
+                    patience=20,
                     min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',
@@ -281,7 +272,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250520_abs_reproattempt', type=str)
+            '--log_dir', default='./logs/20250518_abs_ABLATION', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -314,64 +305,34 @@ def main(parser: ArgumentParser = None, **kwargs):
     # # study setup
     # # ------------
     # Search spaces
-    if args.stage == "final":
-        if args.model == "pure_nn":
-            search_space  = {
-                'lambda_kan_entropy': [1e-10],
-                'lambda_kan_coefdiff2': [1e-10],
-                'learning_rate': [0.1],
-                'weight_decay': [0.0],
-                'seed': [1, 2, 3, 4, 5],
-            }
-        elif args.model == "nn" and args.rb_constraint == "softplus":
-            search_space  = {
-                'lambda_kan_entropy': [1e-10],
-                'lambda_kan_coefdiff2': [1e-10],
-                'learning_rate': [1e-3],
-                'weight_decay': [1e-3],
-                'seed': [1, 2, 3, 4, 5],
-            }
-        elif args.model == "nn" and args.rb_constraint == "relu":
-            search_space  = {
-                'lambda_kan_entropy': [1e-10],
-                'lambda_kan_coefdiff2': [1e-10],
-                'learning_rate': [1e-3],
-                'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4, 5],
-            }
-        elif args.model == "kan" and args.num_layers == 1:
-            search_space  = {
-                'lambda_kan_entropy': [1e-2],
-                'lambda_kan_coefdiff2': [0.1],
-                'learning_rate': [0.1],
-                'weight_decay': [1e-4],
-                'seed': [1, 2, 3, 4, 5],
-            }
-        elif args.model == "kan" and args.num_layers == 2:
-            search_space = {
+    if args.stage == "final" and args.model == "kan" and args.num_layers == 2:
+        import copy
+        base_params = {  # BASE
                 'learning_rate': [1e-2],
                 'weight_decay': [0],
-                'lambda_kan_entropy': [1e-3],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
+                'kan_grid': [30],
+                'lambda_param_violation': [1.0],
+                'lambda_kan_entropy': [1e-3],
+                'lambda_kan_l1': [1e-3],
                 'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
-                'seed': [1, 2, 3, 4, 5],  # TODO
+                'seed': [1],  # TODO
             }
+        remove_coefdiff2 = copy.deepcopy(base_params)
+        remove_coefdiff2['lambda_kan_coefdiff2'] = [0.0]
+        remove_l1 = copy.deepcopy(base_params)
+        remove_l1['lambda_kan_l1'] = [0.0]
+        remove_entropy = copy.deepcopy(base_params)
+        remove_entropy['lambda_kan_entropy'] = [0.0]
+        remove_out_of_range = copy.deepcopy(base_params)
+        remove_out_of_range['lambda_param_violation'] = [0.0]
+        small_grid = copy.deepcopy(base_params)
+        small_grid['kan_grid'] = [3]
+        small_grid['kan_coefdiff2'] = [0, 1]
+        search_spaces = [base_params, remove_coefdiff2, remove_l1, remove_entropy, remove_out_of_range, small_grid]
+ 
     else:
-        if args.model in ["nn", "pure_nn"]:
-            search_space = {
-                'learning_rate': [1e-3, 1e-2, 1e-1],
-                'weight_decay': [0, 1e-4, 1e-3],
-                'lambda_kan_entropy': [1e-10],
-                'lambda_kan_coefdiff2': [1e-10],
-                'seed': [1],
-            }
-        elif args.model == "kan" and args.num_layers == 1:
-            search_space = {
-                'learning_rate': [1e-2],
-                'weight_decay': [0],
-                'lambda_kan_entropy': [1e-3, 1e-2],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-                'lambda_kan_coefdiff2': [1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
-                'seed': [1],
-            }
+        raise NotImplementedError()
+
 
     # Modify log_dir
     args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'
@@ -385,7 +346,7 @@ def main(parser: ArgumentParser = None, **kwargs):
         study = optuna.create_study(
             study_name=os.path.basename(args.log_dir),
             storage=sql_path,
-            sampler=optuna.samplers.GridSampler(search_space),
+            sampler=optuna.samplers.GridSampler(search_spaces[0]),
             direction='minimize',
             load_if_exists=False)
 
@@ -398,15 +359,16 @@ def main(parser: ArgumentParser = None, **kwargs):
     # ------------
     # run study
     # ------------
-    n_trials = 1
-    for _, v in search_space.items():
-        n_trials *= len(v)
-    # n_trials = 20
-    study = optuna.load_study(
-        study_name=os.path.basename(args.log_dir),
-        storage=sql_path,
-        sampler=optuna.samplers.GridSampler(search_space))  # optuna.samplers.GPSampler(seed=42))  )
-    study.optimize(Objective(args), n_trials=n_trials)
+    for search_space in search_spaces:
+        n_trials = 1
+        for _, v in search_space.items():
+            n_trials *= len(v)
+        # n_trials = 20
+        study = optuna.load_study(
+            study_name=os.path.basename(args.log_dir),
+            storage=sql_path,
+            sampler=optuna.samplers.GridSampler(search_space))  # optuna.samplers.GPSampler(seed=42))  )
+        study.optimize(Objective(args), n_trials=n_trials)
 
 
 if __name__ == '__main__':

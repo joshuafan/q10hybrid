@@ -169,7 +169,7 @@ class Objective(object):
             callbacks=[
                 EarlyStopping(
                     monitor='valid_loss',
-                    patience=20,
+                    patience=10,
                     min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',
@@ -276,7 +276,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250513_linear_FIXED', type=str)
+            '--log_dir', default='./logs/20250520_linear_reproattempt', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
