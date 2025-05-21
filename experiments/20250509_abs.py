@@ -3,12 +3,14 @@ Removing top 20% of ta from train set
 
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
-
+# Tuning
+python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage tuning;
+python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
+python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
 python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
 python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning
 
-
-# pure NN
+# Final
 python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage final;
 python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
 python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
@@ -60,7 +62,7 @@ class Objective(object):
         q10_init = 0.5
         seed = trial.suggest_int('seed', 0, 5)
         use_ta = True
-        kan_base_fun = "zero" # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
+        kan_base_fun = "zero" if (self.args.model == "kan" and self.args.num_layers == 2) else "identity"
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_absolute_deviation = True
         kan_flat_entropy = True
@@ -281,7 +283,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250518_abs_reproattempt', type=str)
+            '--log_dir', default='./logs/20250520_abs_reproattempt', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -364,14 +366,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'seed': [1],
             }
-        elif args.model == "kan":
-            # search_space = {
-            #     'learning_rate': [1e-2],
-            #     'weight_decay': [0],
-            #     'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-            #     'lambda_kan_coefdiff2': [1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
-            #     'seed': [1],
-            # }
+        elif args.model == "kan" and args.num_layers == 1:
             search_space = {
                 'learning_rate': [1e-2],
                 'weight_decay': [0],
@@ -379,13 +374,6 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
                 'seed': [1],
             }
-            # search_space = {
-            #     'learning_rate': [1e-2],
-            #     'weight_decay': [1e-4],
-            #     'lambda_kan_entropy': [0.1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-            #     'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
-            #     'seed' : [0],
-            # }
 
     # Modify log_dir
     args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'

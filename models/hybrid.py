@@ -517,7 +517,7 @@ class Q10Model(pl.LightningModule):
 				self.log(f'{feat}_importance', pdv_importances.flatten()[feat_idx], prog_bar=False, logger=True)
 			
 			if self.model == "kan":
-				method_str = f"ScIReN {self.hparams.num_layers}-layer"
+				method_str = f"KAN {self.hparams.num_layers}-layer"
 			elif self.model == "nn":
 				method_str = f"Blackbox-Hybrid"
 			elif self.model == "pure_nn":
@@ -531,7 +531,7 @@ class Q10Model(pl.LightningModule):
 				# If using one-layer KAN, read off functional relationships with mask
 				kan_importances = self.nn.edge_scores[0].permute(1, 0).detach().cpu().numpy()
 				predicted_importances_all["KAN"] = kan_importances / kan_importances.sum(axis=0, keepdims=True)
-			DEFAULT_REL =f"KAN" if f"KAN" in predicted_importances_all else f"{method_str}\n(Partial Dependence Variance)"
+			DEFAULT_REL = "KAN" if "KAN" in predicted_importances_all else f"{method_str}\n(Partial Dependence Variance)"
 			default_kl = misc_utils.kl_divergence(self.true_relationships, predicted_importances_all[DEFAULT_REL])
 			default_l2 = math.sqrt(((self.true_relationships - predicted_importances_all[DEFAULT_REL]) ** 2).sum())
 
