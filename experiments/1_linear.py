@@ -45,6 +45,7 @@ TRAINER_ARGS = dict(
     accelerator="auto",
     devices="auto",
     strategy="auto",
+    deterministic=True,
 )
 
 

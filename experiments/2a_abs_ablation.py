@@ -33,6 +33,7 @@ TRAINER_ARGS = dict(
     accelerator="auto",
     devices="auto",
     strategy="auto",
+    deterministic=True,
 )
 
 
@@ -271,7 +272,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250520_abs_ABLATION', type=str)
+            '--log_dir', default='./logs/2a_abs_ablation', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -314,7 +315,7 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_entropy': [1e-3],
                 'lambda_kan_l1': [1e-3],
                 'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
-                'seed': [1],  # TODO
+                'seed': [1, 2, 3],  # TODO
             }
         remove_coefdiff2 = copy.deepcopy(base_params)
         remove_coefdiff2['lambda_kan_coefdiff2'] = [0.0]

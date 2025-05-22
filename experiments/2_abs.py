@@ -46,6 +46,7 @@ TRAINER_ARGS = dict(
     accelerator="auto",
     devices="auto",
     strategy="auto",
+    deterministic=True,
 )
 
 
@@ -284,7 +285,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/2_abs_attempt6', type=str)
+            '--log_dir', default='./logs/2_abs_deterministic', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
