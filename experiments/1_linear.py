@@ -1,6 +1,7 @@
 """
 Removing top 20% of ta from train set
 
+# If running locally on Mac, run this first
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 # Tuning
@@ -16,7 +17,6 @@ python experiments/20250509_linear.py --model nn --rb_constraint softplus --num_
 python experiments/20250509_linear.py --model nn --rb_constraint relu --num_layers 2 --stage final;
 python experiments/20250509_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage final;
 python experiments/20250509_linear.py --model kan --rb_constraint relu --num_layers 1 --stage final;
-
 
 """
 
@@ -283,7 +283,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250520_linear_reproattempt', type=str)
+            '--log_dir', default='./logs/20250521_linear_reproattempt2', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -370,8 +370,8 @@ def main(parser: ArgumentParser = None, **kwargs):
             search_space = {
                 'learning_rate': [1e-3, 1e-2, 1e-1],
                 'weight_decay': [1e-4],
-                'lambda_kan_entropy': [1e-2, 1e-1, 1],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
-                'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 10],  # 1e-2, 1e-1, 1],
+                'lambda_kan_entropy': [1e-3, 1e-2, 1e-1, 1],
+                'lambda_kan_coefdiff2': [1e-2, 1e-1, 1, 10],
                 'seed' : [0],
             }
 
