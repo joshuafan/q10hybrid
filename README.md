@@ -1,93 +1,62 @@
+# Ecosystem respiration experiments (ScIReN paper)
 
-Author: B. Kraft [bkraf@bgc-jena.mpg.de]
 
-<div align="center">
+## Usage
 
-# Hybrid modeling of ecosystem respiration temperature sensitivity
-
-</div><br><br>
-
-## Description
-
-Q10 hybrid modeling experiment for a book chapter.
-
-## How to run
-
-First, install dependencies.
-
-```bash
-# clone project
-git clone https://github.com/bask0/q10hybrid
-
-# Optional: create and activate new conda environment.
-conda create --yes --name q10hybrid python=3.6
-conda activate q10hybrid
-
-# install project
-cd q10hybrid
-pip install -e .
-pip install -r requirements.txt
-```
-
-## Q10 hybrid modeling experiment
-
-Base respiration is simulated using observed short-wave irradiation and the delta thereof. Ecosyste respiration is calculated using the [Q10 approach](https://en.wikipedia.org/wiki/Q10_(temperature_coefficient)).
-
-<img src="https://render.githubusercontent.com/render/math?math=Rb_\mathrm{syn} = f(W_\mathrm{in, pot}, \Delta SW_\mathrm{in, pot})"><br>
-
-<img src="https://render.githubusercontent.com/render/math?math=RECO_\mathrm{syn} = Rb_\mathrm{syn} \cdot 1.5^{0.1 \cdot (TA - 15.0)}">
-
-## Experiment
-
-Estimate Q10 in two different setups:
-
-* Rb=NN(SW_in, dSW_in)
-* Rb=NN(SW_in, dSW_in, T)
-
-We investigate wheter we can estimate Q10 in both cases robustly and how model hyperparameters (here: dropout={0.0, 0.2, 0.4, 0.6}) impact the results.
-
-![data](/analysis/plots/data.png)
-
-### Usage
-
-If running locally on Mac:
+If running locally on Mac first run:
 ```
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 ```
 
-@joshuafan:
-Create study. Run this everytime the command-line arguments changed.
+The following commands will reproduce Table 1.
 ```
-python experiments/experiment_01.py --create_study
-python experiments/experiment_hardconstraint.py --create_study
-
-```
-
-Commands
-```
-python experiments/experiment_01.py --model nn --rb_constraint softplus
-python experiments/experiment_linear.py --model nn --rb_constraint softplus --num_layers 1
-python experiments/experiment_hardconstraint.py --model kan --rb_constraint relu --num_layers 1 --learning_rate 1e-2 --weight_decay 0 --single_seed
+python experiments/1_linear.py --model pure_nn --num_layers 2 --stage final;
+python experiments/1_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
+python experiments/1_linear.py --model nn --rb_constraint relu --num_layers 2 --stage final;
+python experiments/1_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage final;
+python experiments/1_linear.py --model kan --rb_constraint relu --num_layers 1 --stage final;
 ```
 
-KAN with softplus (so it has to learn inverse softplus)
-python experiments/experiment_hardconstraint.py --model kan --rb_constraint relu --num_layers 1 --learning_rate 1e-2 --weight_decay 0 --single_seed
+A folder will be created under `logs`, with the name given by the `--log_dir` argument (plus more metadata). Inside the folder, you can view the final results in `results_summary_file.csv`, or view visualizations for each run inside the `version_XX` folders.
 
+The following commands will reproduce Table 2.
+```
+python experiments/2_abs.py --model pure_nn --num_layers 2 --stage final;
+python experiments/2_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
+python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final;
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final
+```
 
-Hyperparameter tuning
-```
-python experiments/20250428_hyperparam_hardconstraint.py --model kan --rb_constraint relu --num_layers 1 
-```
+See the documentation in those files (`experiments/1_linear.py`, `experiments/2_abs.py`) for more details. 
+
+To do hyperparameter tuning, change `--stage final` to `--stage tuning`, and create a hyperparameter grid in the `__main__` function.
+`experiments/1a_linear_ablation.py` and `experiments/2a_abs_ablation.py` show how to run ablations.
+
 
 
 ## Optuna notes
 
-Install Optuna dashboard
+This codebase supports using Optuna for hyperparameter tuning and visualization. To do this, run 
 ```
 pip install optuna-dashboard
+optuna-dashboard sqlite:///./logs/1_abs_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
+```
+(You should replace the path with the path to the `optuna.db` that was created inside the log directory.)
+
+If this is being run on a remote server: run this command on your local machine
+```
+ssh -N <username>@<server> -L 8081:localhost:8081
+```
+(Or if it's being run on a compute node that's separate from the head node:)
+```
+ssh -N -J <username>@<server> <username>@<node> -L 8081:localhost:8081
+```
+
+Finally, in all cases, navigate to http://127.0.0.1:8081/ in a local web browser.
 
 
-optuna-dashboard sqlite:///./logs/20250509_linear_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
+
 Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
 
 optuna-dashboard sqlite:///./logs/20250509_linear_nn_layers=2_constraint=softplus/optuna.db --port 8081
@@ -144,22 +113,73 @@ Best 36, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.1, lambda
 
 
 
-# If this is being run on remote server on a compute node c0011 (different from head node):
-ssh -N -J jyf6@aida.cac.cornell.edu jyf6@c0011 -L 8081:localhost:8081
-# If this is being run on a remote server (head node)
-ssh -N jyf6@aida.cac.cornell.edu -L 8081:localhost:8081
-# If this is run locally, ignore the above.
-# In all cases, go to local browser.
-http://127.0.0.1:8081/
+
 
 
 ```
 
-## Branches (joshuafan)
-`master` branch contains everything used in the ScIReN paper.
-`20250519_messy` contains some experimental features such as Jacobian L0.5, Jacobian L1 regularization, SENN, node entropy
 
 
+# Original README
+
+The code base was derived from this repo: https://github.com/bask0/q10hybrid
+
+Here is the original documentation from the repo:
+
+Author: B. Kraft [bkraf@bgc-jena.mpg.de]
+
+<div align="center">
+
+
+
+
+# Hybrid modeling of ecosystem respiration temperature sensitivity
+
+
+
+
+</div><br><br>
+
+## Description
+
+Q10 hybrid modeling experiment for a book chapter.
+
+## How to run
+
+First, install dependencies.
+
+```bash
+# clone project
+git clone https://github.com/bask0/q10hybrid
+
+# Optional: create and activate new conda environment.
+conda create --yes --name q10hybrid python=3.6
+conda activate q10hybrid
+
+# install project
+cd q10hybrid
+pip install -e .
+pip install -r requirements.txt
+```
+
+## Q10 hybrid modeling experiment
+
+Base respiration is simulated using observed short-wave irradiation and the delta thereof. Ecosyste respiration is calculated using the [Q10 approach](https://en.wikipedia.org/wiki/Q10_(temperature_coefficient)).
+
+<img src="https://render.githubusercontent.com/render/math?math=Rb_\mathrm{syn} = f(W_\mathrm{in, pot}, \Delta SW_\mathrm{in, pot})"><br>
+
+<img src="https://render.githubusercontent.com/render/math?math=RECO_\mathrm{syn} = Rb_\mathrm{syn} \cdot 1.5^{0.1 \cdot (TA - 15.0)}">
+
+## Experiment
+
+Estimate Q10 in two different setups:
+
+* Rb=NN(SW_in, dSW_in)
+* Rb=NN(SW_in, dSW_in, T)
+
+We investigate wheter we can estimate Q10 in both cases robustly and how model hyperparameters (here: dropout={0.0, 0.2, 0.4, 0.6}) impact the results.
+
+![data](/analysis/plots/data.png)
 
 
 Run experiments:
