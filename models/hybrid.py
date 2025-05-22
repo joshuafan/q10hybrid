@@ -382,12 +382,6 @@ class Q10Model(pl.LightningModule):
 			visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"{epoch_str}_true_vs_predicted_val.png"),
 																y_hats=y_hats, ys=ys, titles=titles)
 			
-			# # normed version of reco
-			# y_hats = [self.target_norm(torch.tensor(self.ds_val['reco_pred'].values[self.current_epoch, :]).unsqueeze(1))]
-			# ys = [self.target_norm(torch.tensor(self.ds_val['reco'].values).unsqueeze(1))]
-			# titles = ['R_eco (NORMALIZED labeled)']
-			# visualization_utils.plot_true_vs_predicted_multiple(os.path.join(self.logger.log_dir, f"{epoch_str}_true_vs_predicted_val_NORMALIZED.png"),
-			#                                                     y_hats=y_hats, ys=ys, titles=titles)
 
 			# KAN plot. Note this should go before other plots, since it relies on cached values from the last batch passed through the model
 			# (the below plots pass other non-representative data through the model)
@@ -397,60 +391,10 @@ class Q10Model(pl.LightningModule):
 				self.nn.attribute()
 				self.nn.node_attribute()
 
-				# # Plot the pruned model
-				# pruned_model = self.nn.prune()  # node_th=0.03, edge_th=0.03)
-				# # pruned_model.auto_swap()  # swap neurons to make it simpler? 
-				# pruned_model.plot(folder=os.path.join(self.logger.log_dir, "splines_pruned"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
-				# plt.savefig(os.path.join(self.logger.log_dir, f"{epoch_str}_kan_plot_pruned.png"))
-				# plt.close()
-
 				# Plot the unpruned model
 				self.nn.plot(folder=os.path.join(self.logger.log_dir, "splines"), in_vars=self.features, out_vars=out_vars)  #, scale=5, varscale=0.15)
 				plt.savefig(os.path.join(self.logger.log_dir, f"{epoch_str}_kan_plot.png"))
 				plt.close()
-
-			# print("True impt", self.true_relationships)
-			# print("Pred jac impt", jacobian_importances)
-			# print("PRed pdv impt", pdv_importances)
-
-			# # If functional relationships are known, compare KAN's predicted relationships with ground-truth relationships
-			# # Save picture of functional relationships. Source: https://stackoverflow.com/questions/69986007/matplotlib-imshow-with-1-color-for-each-discrete-value
-			# fig, axeslist = plt.subplots(1, len(predicted_importances_all)+1, figsize=(6*(len(predicted_importances_all)+1), 6))
-			# cmap = plt.get_cmap('viridis')
-			# for pred_idx, (pred_method, pred_rel) in enumerate(predicted_importances_all.items()):
-			#     relationship_kl = misc_utils.kl_divergence(self.true_relationships, pred_rel)
-			#     relationship_l2 = math.sqrt(((self.true_relationships - pred_rel) ** 2).sum())
-			#     print("REl metrics", relationship_kl, relationship_l2)
-			#     im = axeslist[pred_idx].imshow(pred_rel, cmap=cmap, vmin=0, vmax=1)  #, vmin=-0.5, vmax=5.5, cmap=cmap, interpolation="none")
-			#     axeslist[pred_idx].set_xticks(np.arange(len(self.targets)))
-			#     axeslist[pred_idx].set_yticks(np.arange(len(self.features)))
-			#     axeslist[pred_idx].set_xticklabels(self.targets, rotation='vertical')
-			#     axeslist[pred_idx].set_yticklabels(self.features)
-			#     axeslist[pred_idx].set_title(f"Predicted by {pred_method}\n(KL: {relationship_kl:.3f}, Euclidean dist: {relationship_l2:.3f})")
-			# im = axeslist[-1].imshow(self.true_relationships, cmap=cmap, vmin=0, vmax=1)  #, vmin=-0.5, vmax=5.5, cmap=cmap, interpolation="none")
-			# axeslist[-1].set_xticks(np.arange(len(self.targets)))
-			# axeslist[-1].set_yticks(np.arange(len(self.features)))
-			# axeslist[-1].set_xticklabels(self.targets, rotation='vertical')
-			# axeslist[-1].set_yticklabels(self.features)
-			# axeslist[-1].set_title("Ground-truth")
-			# fig.colorbar(im, orientation="vertical", ax=axeslist[-1])
-			# plt.tight_layout()
-			# plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_functional_relationships.png"))
-			# plt.close()
-
-			# if self.model == "nn":
-			#     # Plot PDP variance
-			#     plot_pd_variance(exp=exp_importance)
-			#     plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_pd_variance.png"))
-			#     plt.close()
-
-			#     # Accumulated Local Effects plot (similar to partial dependence plot
-			#     # but better with correlated features)
-			#     ale = ALE(self.predictor, feature_names=self.features, target_names=self.targets)
-			#     exp = ale.explain(cached_nn_input.detach().cpu().numpy())
-			#     plot_ale(exp)
-			#     plt.savefig(os.path.join(self.logger.log_dir, f"epoch{self.current_epoch}_ale.png"))
-			#     plt.close()
 
 		# Metrics to save
 		valid_reco_r2, valid_reco_mse, valid_reco_mae, valid_reco_corr = misc_utils.compute_metrics(self.ds_val['reco'].values, self.ds_val['reco_pred'].values[self.current_epoch, :])

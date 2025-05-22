@@ -1,5 +1,6 @@
 # Ecosystem respiration experiments (ScIReN paper)
 
+This section explains how to reproduce Tables 1-2 (Ecosystem Respiration experiments) in the ScIReN paper.
 
 ## Usage
 
@@ -31,8 +32,18 @@ python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hi
 See the documentation in those files (`experiments/1_linear.py`, `experiments/2_abs.py`) for more details. 
 
 To do hyperparameter tuning, change `--stage final` to `--stage tuning`, and create a hyperparameter grid in the `__main__` function.
-`experiments/1a_linear_ablation.py` and `experiments/2a_abs_ablation.py` show how to run ablations.
 
+To run ablations, `experiments/1a_linear_ablation.py` and `experiments/2a_abs_ablation.py` provide examples.
+
+## Code summary
+
+- `experiments/` folder contains main methods that start each experiment (linear Rb, abs Rb, and ablations).
+   * `search_space` can be used to specify a grid of hyperparameters.
+- `model/hybrid.py` contains LightningModules for the core models.
+   * For pure-NN, set `model='purenn'`. For Blackbox-Hybrid, set `model='nn'`. For ScIReN, set `model='kan'`.
+   * You can set `rb_constraint` to `softplus` (nonlinear) or `relu` (linear).
+   * The module defines `train_step`, `validation_step`, and creates visualizations every 10 epochs.
+- `project/fluxdata.py` is where the synthetic labels are constructed, and we remove high-temperature parameters from the training set. `rb_synth=9` means linear, and `rb_synth=8` means abs (nonlinear).
 
 
 ## Optuna notes
@@ -57,68 +68,6 @@ Finally, in all cases, navigate to http://127.0.0.1:8081/ in a local web browser
 
 
 
-Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
-
-optuna-dashboard sqlite:///./logs/20250509_linear_nn_layers=2_constraint=softplus/optuna.db --port 8081
-Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
-
-optuna-dashboard sqlite:///./logs/20250509_linear_nn_layers=2_constraint=relu/optuna.db --port 8081
-Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
-
-optuna-dashboard sqlite:///./logs/20250509_linear_kan_layers=1_constraint=softplus/optuna.db --port 8081
-Best 5, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.1, learning_rate: 0.1, weight_decay: 0.0001]
-
-optuna-dashboard sqlite:///./logs/20250509_linear_kan_layers=1_constraint=relu/optuna.db --port 8081
-Best 8, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 1.0, learning_rate: 0.01, weight_decay: 0.0001]
-
-
-
-NEW ABS
-optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
-
-optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_nn_layers=2_constraint=softplus/optuna.db --port 8081
-
-optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_nn_layers=2_constraint=relu/optuna.db --port 8081
-
-optuna-dashboard sqlite:///./logs/20250514_abs_FIXED_TUNE_kan_layers=1_constraint=relu/optuna.db --port 8081
-Params = [seed: 0, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.1, learning_rate: 0.1, weight_decay: 0.0001]
-
-optuna-dashboard sqlite:///./logs/20250513_abs_FIXED_kan_layers=2_constraint=relu/optuna.db --port 8081
-
-
-
-
-OLD ABS
-
-optuna-dashboard sqlite:///./logs/20250509_abs_pure_nn_layers=2_constraint=softplus/optuna.db --port 8081
-Best 5, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.1, weight_decay: 0.0]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=softplus/optuna.db --port 8081
-Best 1, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.001]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_nn_layers=2_constraint=relu/optuna.db --port 8081
-Best 2, Params = [seed: 0, lambda_kan_l1: 1e-10, lambda_kan_entropy: 1e-10, lambda_kan_coefdiff2: 1e-10, learning_rate: 0.001, weight_decay: 0.0001]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=1_constraint=relu/optuna.db --port 8081
-Best 11, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.01, lambda_kan_coefdiff2: 0.01, learning_rate: 0.01, weight_decay: 0.0001]
-
-optuna-dashboard sqlite:///./logs/20250509_abs_kan_layers=2_constraint=relu/optuna.db --port 8081
-Best 36, Params = [seed: 0, lambda_kan_l1: 0.01, lambda_kan_entropy: 0.1, lambda_kan_coefdiff2: 1.0, learning_rate: 0.01, weight_decay: 0.0001]
-
-
-
-
-
-
-
-
-
-
-
-
-```
-
-
 
 # Original README
 
@@ -129,8 +78,6 @@ Here is the original documentation from the repo:
 Author: B. Kraft [bkraf@bgc-jena.mpg.de]
 
 <div align="center">
-
-
 
 
 # Hybrid modeling of ecosystem respiration temperature sensitivity
