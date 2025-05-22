@@ -5,18 +5,18 @@ Removing top 20% of ta from train set
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 # Tuning
-python experiments/20250509_linear.py --model pure_nn --num_layers 2 --stage tuning;
-python experiments/20250509_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
-python experiments/20250509_linear.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
-python experiments/20250509_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage tuning;
-python experiments/20250509_linear.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
+python experiments/1_linear.py --model pure_nn --num_layers 2 --stage tuning;
+python experiments/1_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
+python experiments/1_linear.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
+python experiments/1_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage tuning;
+python experiments/1_linear.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
 
 # Final
-python experiments/20250509_linear.py --model pure_nn --num_layers 2 --stage final;
-python experiments/20250509_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
-python experiments/20250509_linear.py --model nn --rb_constraint relu --num_layers 2 --stage final;
-python experiments/20250509_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage final;
-python experiments/20250509_linear.py --model kan --rb_constraint relu --num_layers 1 --stage final;
+python experiments/1_linear.py --model pure_nn --num_layers 2 --stage final;
+python experiments/1_linear.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
+python experiments/1_linear.py --model nn --rb_constraint relu --num_layers 2 --stage final;
+python experiments/1_linear.py --model kan --rb_constraint softplus --num_layers 1 --stage final;
+python experiments/1_linear.py --model kan --rb_constraint relu --num_layers 1 --stage final;
 
 """
 
@@ -283,7 +283,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250521_linear_reproattempt2', type=str)
+            '--log_dir', default='./logs/1_linear', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )

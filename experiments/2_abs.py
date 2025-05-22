@@ -5,18 +5,18 @@ Removing top 20% of ta from train set
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 # Tuning
-python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage tuning;
-python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
-python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning
+python experiments/2_abs.py --model pure_nn --num_layers 2 --stage tuning;
+python experiments/2_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage tuning;
+python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 2 --stage tuning;
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning;
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning
 
 # Final
-python experiments/20250509_abs.py --model pure_nn --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final;
-python experiments/20250509_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final
+python experiments/2_abs.py --model pure_nn --num_layers 2 --stage final;
+python experiments/2_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
+python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final;
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final
 
 
 """
@@ -75,7 +75,7 @@ class Objective(object):
         # Loss weights / model complexity
         lambda_param_violation = 1.0 if self.args.rb_constraint == 'relu' else 0.0
         lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1)  #, log=True)
-        lambda_kan_l1 = lambda_kan_entropy  # trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1) # , log=True)  #  1e-2  # lambda_kan_entropy
+        lambda_kan_l1 = lambda_kan_entropy  #  trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1)  # , log=True)  #  1e-2  # lambda_kan_entropy
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)  # , log=True)  #, log=True)
         lambda_kan_coefdiff = 0.0  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
 
@@ -193,7 +193,7 @@ class Objective(object):
         best_valid_loss = trainer.callback_metrics['valid_loss'].item()
 
         # Temporary - load from checkpoint
-        # model = Q10Model.load_from_checkpoint("/Users/joshuafan/Documents/BINNS/src_binns/q10hybrid/logs/20250509_abs_kan_layers=2_constraint=relu/lightning_logs/version_6/checkpoints/epoch=20-val_loss=0.00.ckpt",
+        # model = Q10Model.load_from_checkpoint("/Users/joshuafan/Documents/BINNS/src_binns/q10hybrid/logs/2_abs_kan_layers=2_constraint=relu/lightning_logs/version_6/checkpoints/epoch=20-val_loss=0.00.ckpt",
         #                                       features=features,
         #                                     targets=targets,
         #                                     norm=fluxdata._norm,
@@ -284,7 +284,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250521_abs_reproattempt', type=str)
+            '--log_dir', default='./logs/2_abs_attempt6', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -356,6 +356,8 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'weight_decay': [0],
                 'lambda_kan_entropy': [1e-3],  #, 1e-1],  #, 1e-1, 1],  # Currently tied
                 'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
+                # 'lambda_kan_l1': [1e-3],
+                # 'lambda_kan_coefdiff': [0],
                 'seed': [1, 2, 3, 4, 5],  # TODO
             }
     else:

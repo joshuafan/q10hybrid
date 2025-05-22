@@ -5,7 +5,7 @@ Removing top 20% of ta from train set
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 # Ablation
-python experiments/20250509_linear_ablation.py --model kan --rb_constraint relu --num_layers 1 --stage final
+python experiments/1a_linear_ablation.py --model kan --rb_constraint relu --num_layers 1 --stage final
 """
 
 
