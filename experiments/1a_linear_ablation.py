@@ -1,12 +1,11 @@
 """
 Removing top 20% of ta from train set
 
+# If running locally on Mac, run this first
 export PYTORCH_ENABLE_MPS_FALLBACK=1
 
-
-python experiments/20250509_abs_ablation.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final
-
-
+# Ablation
+python experiments/1a_linear_ablation.py --model kan --rb_constraint relu --num_layers 1 --stage final
 """
 
 
@@ -34,6 +33,7 @@ TRAINER_ARGS = dict(
     accelerator="auto",
     devices="auto",
     strategy="auto",
+    deterministic=True,
 )
 
 
@@ -43,7 +43,7 @@ class Objective(object):
 
     def __call__(self, trial: optuna.trial.Trial) -> float:
         # FIXED hyperparameters
-        rb_synth = 8
+        rb_synth = 9
         remove_high = "ta"
         remove_high_frac = 0.2
         reco_noise_std = 0.1
@@ -51,7 +51,7 @@ class Objective(object):
         q10_init = 0.5
         seed = trial.suggest_int('seed', 0, 5)
         use_ta = True
-        kan_base_fun = "zero" if (self.args.model == "kan" and self.args.num_layers == 2) else "identity"
+        kan_base_fun = "identity"
         kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
         kan_absolute_deviation = True
         kan_flat_entropy = True
@@ -62,14 +62,14 @@ class Objective(object):
 
         # Loss weights / model complexity
         lambda_param_violation = trial.suggest_float('lambda_param_violation', 0, 1) if self.args.rb_constraint == 'relu' else 0.0
-        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1)  #, log=True)
-        lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1) # , log=True)  #  1e-2  # lambda_kan_entropy
-        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)  # , log=True)  #, log=True)
-        lambda_kan_coefdiff = 0.0  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
+        lambda_kan_entropy = trial.suggest_float('lambda_kan_entropy', 1e-3, 1e-1)
+        lambda_kan_l1 = trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1)  # lambda_kan_entropy
+        lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)
+        lambda_kan_coefdiff = 0.0  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1)
 
         # Optimization
         learning_rate = trial.suggest_float('learning_rate', 1e-2, 0.1, log=True)
-        weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2)  # , log=True)
+        weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2)
         dropout = 0.0  # trial.suggest_float('dropout', 0.0, 0.5)
 
         if use_ta:
@@ -165,7 +165,7 @@ class Objective(object):
             callbacks=[
                 EarlyStopping(
                     monitor='valid_loss',
-                    patience=20,
+                    patience=10,
                     min_delta=0.00001),
                 ModelCheckpoint(
                     filename='{epoch}-{val_loss:.2f}',
@@ -179,42 +179,6 @@ class Objective(object):
 
         # # Save the best valid loss as this will go away after testing
         best_valid_loss = trainer.callback_metrics['valid_loss'].item()
-
-        # Temporary - load from checkpoint
-        # model = Q10Model.load_from_checkpoint("/Users/joshuafan/Documents/BINNS/src_binns/q10hybrid/logs/20250509_abs_kan_layers=2_constraint=relu/lightning_logs/version_6/checkpoints/epoch=20-val_loss=0.00.ckpt",
-        #                                       features=features,
-        #                                     targets=targets,
-        #                                     norm=fluxdata._norm,
-        #                                     ds_train=ds_train,
-        #                                     ds_val=ds_val,
-        #                                     ds_test=ds_test,
-        #                                     q10_init=q10_init,
-        #                                     hidden_dim=self.args.hidden_dim,
-        #                                     num_layers=self.args.num_layers,
-        #                                     learning_rate=learning_rate,
-        #                                     dropout=dropout,
-        #                                     weight_decay=weight_decay,
-        #                                     lambda_param_violation=lambda_param_violation,
-        #                                     lambda_kan_l1=lambda_kan_l1,
-        #                                     lambda_kan_entropy=lambda_kan_entropy,
-        #                                     lambda_kan_node_entropy=lambda_kan_node_entropy,
-        #                                     lambda_kan_coefdiff=lambda_kan_coefdiff,
-        #                                     lambda_kan_coefdiff2=lambda_kan_coefdiff2,
-        #                                     lambda_jacobian_l1=lambda_jacobian_l1,
-        #                                     lambda_jacobian_l05=lambda_jacobian_l05,
-        #                                     kan_grid=kan_grid,
-        #                                     kan_update_grid=kan_update_grid,
-        #                                     kan_grid_margin=kan_grid_margin,
-        #                                     kan_noise=kan_noise,
-        #                                     kan_base_fun=kan_base_fun,
-        #                                     kan_affine_trainable=kan_affine_trainable,
-        #                                     num_steps=len(train_loader) * max_epochs,
-        #                                     model=self.args.model,
-        #                                     rb_constraint=self.args.rb_constraint,
-        #                                     true_relationships=fluxdata.true_relationships)
-        # val_metrics_dict = trainer.validate(model=model, dataloaders=val_loader)[0]
-        # test_metrics_dict = trainer.test(model=model, dataloaders=test_loader)[0]
-        # exit(1)
 
         # ------------
         # testing
@@ -272,7 +236,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/20250520_abs_ABLATION', type=str)
+            '--log_dir', default='./logs/20250520_linear_ABLATION', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
@@ -305,16 +269,16 @@ def main(parser: ArgumentParser = None, **kwargs):
     # # study setup
     # # ------------
     # Search spaces
-    if args.stage == "final" and args.model == "kan" and args.num_layers == 2:
+    if args.stage == "final" and args.model == "kan" and args.num_layers == 1:
         import copy
         base_params = {  # BASE
                 'learning_rate': [1e-2],
                 'weight_decay': [0],
                 'kan_grid': [30],
                 'lambda_param_violation': [1.0],
-                'lambda_kan_entropy': [1e-3],
-                'lambda_kan_l1': [1e-3],
-                'lambda_kan_coefdiff2': [1],  # 10],  # 1e-2, 1e-1, 1],
+                'lambda_kan_entropy': [1e-2],
+                'lambda_kan_l1': [1e-2],
+                'lambda_kan_coefdiff2': [1.0],  # 10],  # 1e-2, 1e-1, 1],
                 'seed': [1],  # TODO
             }
         remove_coefdiff2 = copy.deepcopy(base_params)
@@ -323,7 +287,6 @@ def main(parser: ArgumentParser = None, **kwargs):
         remove_l1['lambda_kan_l1'] = [0.0]
         remove_entropy = copy.deepcopy(base_params)
         remove_entropy['lambda_kan_entropy'] = [0.0]
-
         remove_param_violation = copy.deepcopy(base_params)
         remove_param_violation['lambda_param_violation'] = [0.0]
         small_grid = copy.deepcopy(base_params)
