@@ -20,6 +20,9 @@ python experiments/1_linear.py --model kan --rb_constraint relu --num_layers 1 -
 
 A folder will be created under `logs`, with the name given by the `--log_dir` argument (plus more metadata). Inside the folder, you can view the final results in `results_summary_file.csv`, or view visualizations for each run inside the `version_XX` folders.
 
+NOTE: These results may not exactly match the submitted paper, as the results in the paper were run without setting `deterministic=True` in the PyTorch Lightning Trainer (`TRAINER_ARGS`), and hence are slightly nondeterministic (even though seeds were prescribed). However it should be very close. We will fix this in the revised version.
+
+
 The following commands will reproduce Table 2.
 ```
 python experiments/2_abs.py --model pure_nn --num_layers 2 --stage final;
