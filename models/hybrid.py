@@ -279,7 +279,7 @@ class Q10Model(pl.LightningModule):
 		if self.model in ["kan", "pure_kan"]:
 			# NOTE: the lamb values passed are completely unused, as we directly obtain the individual loss components and weight them later.
 			# For default weights see https://github.com/KindXiaoming/pykan/blob/master/kan/MultKAN.py#L1411
-			kan_l1_loss, kan_entropy_loss, kan_coef_loss, kan_coefdiff_loss, kan_coefdiff2_loss = self.nn.reg(reg_metric='edge_backward', lamb_l1=1., lamb_entropy=1., lamb_coef=1., lamb_coefdiff=1.,
+			kan_l1_loss, kan_entropy_loss, kan_coef_loss, kan_coefdiff_loss, kan_coefdiff2_loss, kan_conn_cost = self.nn.reg(reg_metric='edge_backward', lamb_l1=1., lamb_entropy=1., lamb_coef=1., lamb_coefdiff=1.,
 																											  return_indiv=True, flat_entropy=self.hparams.kan_flat_entropy)
 			if self.hparams.lambda_kan_l1 > 0:
 				self.log('kan_l1_loss', kan_l1_loss, prog_bar=False)
