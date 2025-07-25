@@ -370,12 +370,12 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'lambda_kan_coefdiff2': [1e-10],
                 'seed': [1],
             }
-        elif args.model == "kan" and args.num_layers == 1:
+        elif args.model == "kan":
             search_space = {
-                'learning_rate': [1e-2],
-                'weight_decay': [0],
+                'learning_rate': [1e-3, 1e-2, 1e-1],
+                'weight_decay': [0, 1e-4],
                 'lambda_kan_entropy': [1e-3, 1e-2, 1e-1, 1],  # Currently tied
-                'lambda_kan_coefdiff2': [1e-2, 1e-1, 1, 10],  # 1e-2, 1e-1, 1],
+                'lambda_kan_coefdiff2': [1e-3, 1e-2, 1e-1, 1],  # 1e-2, 1e-1, 1],
                 'seed': [1],
             }
 
