@@ -66,10 +66,8 @@ class Objective(object):
         seed = trial.suggest_int('seed', 0, 5)
         use_ta = True
         kan_base_fun = 'identity'  # trial.suggest_categorical('kan_base_fun', ['silu_identity', 'silu', 'identity', 'zero'])
-        #kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
-        #kan_absolute_deviation = True
-        kan_affine_trainable = False
-        kan_absolute_deviation = False
+        kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
+        kan_absolute_deviation = True
         kan_flat_entropy = True
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
         kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
@@ -347,35 +345,35 @@ def main(parser: ArgumentParser = None, **kwargs):
                 'seed': [3],
             }
         elif args.model == "kan" and args.rb_constraint == "softplus":
-            # search_space  = {
-            #     'lambda_kan_entropy': [1e-2],
-            #     'lambda_kan_coefdiff2': [0.1],
-            #     'learning_rate': [0.1],
-            #     'weight_decay': [1e-4],
-            #     'seed': [1, 2, 3, 4, 5],
-            # }
             search_space  = {
-                'lambda_kan_entropy': [1e-3],
-                'lambda_kan_coefdiff2': [1e-2],
+                'lambda_kan_entropy': [1e-2],
+                'lambda_kan_coefdiff2': [0.1],
                 'learning_rate': [0.1],
                 'weight_decay': [1e-4],
                 'seed': [1, 2, 3, 4, 5],
             }
-        elif args.model == "kan" and args.rb_constraint == "relu":
             # search_space  = {
-            #     'lambda_kan_entropy': [1e-2],
-            #     'lambda_kan_coefdiff2': [1.0],
-            #     'learning_rate': [1e-2],
+            #     'lambda_kan_entropy': [1e-3],
+            #     'lambda_kan_coefdiff2': [1e-2],
+            #     'learning_rate': [0.1],
             #     'weight_decay': [1e-4],
             #     'seed': [1, 2, 3, 4, 5],
             # }
+        elif args.model == "kan" and args.rb_constraint == "relu":
             search_space  = {
-                'lambda_kan_entropy': [1e-3],
-                'lambda_kan_coefdiff2': [10.0],
+                'lambda_kan_entropy': [1e-2],
+                'lambda_kan_coefdiff2': [1.0],
                 'learning_rate': [1e-2],
                 'weight_decay': [1e-4],
                 'seed': [1, 2, 3, 4, 5],
             }
+            # search_space  = {
+            #     'lambda_kan_entropy': [1e-3],
+            #     'lambda_kan_coefdiff2': [10.0],
+            #     'learning_rate': [1e-2],
+            #     'weight_decay': [1e-4],
+            #     'seed': [1, 2, 3, 4, 5],
+            # }
     else:
         if args.model in ["nn", "pure_nn"]:
             search_space = {
