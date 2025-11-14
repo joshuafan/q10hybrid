@@ -241,7 +241,7 @@ class FluxData(LightningDataModule):
                     importance_scores = exp_importance.data['feature_importance'].T  # transpose to [n_inputs, n_params]
                     self.true_relationships = importance_scores / importance_scores.sum(axis=0, keepdims=True)
 
-            elif rb_synth == 9:
+            elif rb_synth == 9:  # Linear (same as Reichstein et al 2022 book chapter)
                 ds["rb"] = 0.0075 * ds["sw_pot"] - 0.00375 * ds["dsw_pot"] + 1.03506858
 
                 # construct true KAN for true feature importance
