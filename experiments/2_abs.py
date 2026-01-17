@@ -68,8 +68,8 @@ class Objective(object):
         seed = trial.suggest_int('seed', 0, 5)
         use_ta = True
         kan_base_fun = "zero" if (self.args.model == "kan" and self.args.num_layers == 2) else "identity"
-        kan_affine_trainable = False  # trial.suggest_categorical('kan_affine_trainable', [True, False])
-        kan_absolute_deviation = False
+        kan_affine_trainable = True  # trial.suggest_categorical('kan_affine_trainable', [True, False])
+        kan_absolute_deviation = True
         kan_flat_entropy = True
         kan_grid = 30  # trial.suggest_int('kan_grid', 3, 50)
         kan_grid_margin = 2.0  # trial.suggest_float('kan_grid_margin', 0.0, 2.0)
@@ -288,7 +288,7 @@ class Objective(object):
         parser.add_argument(
             '--data_path', default='./data/Synthetic4BookChap.nc', type=str)
         parser.add_argument(
-            '--log_dir', default='./logs/2_abs_deterministic', type=str)
+            '--log_dir', default='./logs/2_abs_deterministic_20260117', type=str)
         parser.add_argument(
             '--stage', default='final', choices=['final', 'tuning'], type=str
         )
