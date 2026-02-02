@@ -14,13 +14,15 @@ python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hi
 
 
 # Final
-python experiments/2_abs.py --model pure_nn --num_layers 2 --stage final;
-python experiments/2_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final;
-python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final;
-python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 1 --stage final;
-python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final --log_dir "logs/2F_abs_FIXEDKAN3FINAL";
-python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final --log_dir "logs/2F_abs_FIXEDKAN3FINAL"
+python experiments/2_abs.py --model pure_nn --num_layers 2 --stage final --log_dir "logs/2F_abs_REPRO20260120";
+python experiments/2_abs.py --model nn --rb_constraint softplus --num_layers 2 --stage final --log_dir "logs/2F_abs_REPRO20260120";
+python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final --log_dir "logs/2F_abs_REPRO20260120";
+python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 1 --stage final --log_dir "logs/2F_abs_REPRO20260120";
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final --log_dir "logs/2F_abs_REPRO20260120";
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final --log_dir "logs/2F_abs_REPRO20260120_nondeterministic"
 
+
+Result from paper: /home/fs01/jyf6/bulk_datasets/datasets/BINNS/src_binns/q10hybrid/logs/20250515_abs_REPRO_ZERO_kan_layers=2_constraint=relu
 
 """
 
@@ -49,7 +51,7 @@ TRAINER_ARGS = dict(
     accelerator="auto",
     devices="auto",
     strategy="auto",
-    deterministic=True,
+    # deterministic=True,
 )
 
 
@@ -250,12 +252,12 @@ class Objective(object):
         if not os.path.isfile(results_summary_file):
             with open(results_summary_file, mode='w') as f:
                 csv_writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                csv_writer.writerow(['time', 'trial_number', 'params', 'seed'] + VAL_METRICS + TEST_METRICS)
+                csv_writer.writerow(['time', 'trial_number', 'trial_params', 'all_params', 'seed'] + VAL_METRICS + TEST_METRICS)
 
         # Add a row to the summary csv file
         with open(results_summary_file, mode='a+') as f:
             csv_writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow([trial.datetime_start, trial.number, model.hparams, seed] + [val_metrics_dict.get(m) for m in VAL_METRICS] + [test_metrics_dict.get(m) for m in TEST_METRICS])
+            csv_writer.writerow([trial.datetime_start, trial.number, trial.params, model.hparams, seed] + [val_metrics_dict.get(m) for m in VAL_METRICS] + [test_metrics_dict.get(m) for m in TEST_METRICS])
 
         # Store predictions.
         ds = fluxdata.add_scalar_record(model.ds_val, varname='q10', x=model.q10_history)
