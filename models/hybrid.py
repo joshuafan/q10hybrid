@@ -48,14 +48,18 @@ class Q10Model(pl.LightningModule):
 			lambda_kan_entropy: float = 2.0,
 			lambda_kan_coefdiff: float = 1.0,
 			lambda_kan_coefdiff2: float = 1.0,
+			noise_std: float = 0.0,
+			fisher_noise_std: float = 0.0,
 			kan_grid: int = 3,
 			kan_grid_margin: int = 1.0,
 			kan_update_grid: int = 1,
 			kan_noise: int = 0.3,
 			kan_base_fun: str = 'zero',
-			kan_affine_trainable: bool = True, 
-			kan_absolute_deviation: bool = True,
-			kan_flat_entropy: bool = False,
+			kan_affine_trainable: bool = False,
+			kan_bias_trainable: bool = True,
+			use_bn: bool = False,
+			kan_absolute_deviation: bool = False,
+			kan_flat_entropy: bool = True,
 			rb_constraint: str = 'softplus',
 			dropout: float = 0.,
 			activation: str = 'relu',  # 'tanh',
@@ -88,14 +92,18 @@ class Q10Model(pl.LightningModule):
 			'lambda_kan_entropy',
 			'lambda_kan_coefdiff',
 			'lambda_kan_coefdiff2',
+			'noise_std',
+			'fisher_noise_std',
 			'kan_grid',
 			'kan_update_grid',
 			'kan_grid_margin',
 			'kan_noise',
 			'kan_base_fun',
 			'kan_affine_trainable',
+			'kan_bias_trainable',
 			'kan_absolute_deviation',
 			'kan_flat_entropy',
+			'use_bn',
 			'rb_constraint'
 		)
 
@@ -131,8 +139,10 @@ class Q10Model(pl.LightningModule):
 			self.nn = kan.KAN(width=layer_sizes, grid=kan_grid, k=3, seed=torch.initial_seed(), device=self.device,
 							   input_size=layer_sizes[0], noise_scale=kan_noise,
 							   base_fun=kan_base_fun, affine_trainable=kan_affine_trainable,
+							   bias_trainable=kan_bias_trainable,
 							   absolute_deviation=kan_absolute_deviation, grid_eps=1.0, 
-							   grid_margin=kan_grid_margin)
+							   grid_margin=kan_grid_margin, batch_norm_spline=use_bn,
+							   drop_rate=dropout, drop_mode="postact", drop_scale=True)
 		else:
 			raise ValueError("Invalid model")
 		print("MODEL", self.nn)
@@ -156,7 +166,12 @@ class Q10Model(pl.LightningModule):
 
 		# Error if more than 100000 steps--ok here, but careful if you copy code for other projects!.
 		self.q10_history = np.zeros(100000, dtype=np.float32) * np.nan
-		self.kan_update_grid = kan_update_grid
+		self.kan_update_grid = kan_update_grid			
+
+		# Misc stuff for Fisher noise
+		for i, param in enumerate(self.parameters()):
+			self.register_buffer(f"fisher_estimate_{i}", torch.zeros(param.shape))
+		self.step_number = 0
 
 
 	def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -247,7 +262,7 @@ class Q10Model(pl.LightningModule):
 		batch, idx = batch
 
 		# Update grid for KAN if desired
-		if self.model == 'kan' and self.kan_update_grid == 1 and batch_idx == 1 and self.current_epoch < 20:
+		if self.model == 'kan' and batch_idx == 1 and self.kan_update_grid == 1 and self.current_epoch < 20:
 			self.nn.update_grid(self.input_norm(batch))
 			# print('Updated grid to', self.nn.act_fun[1].grid)
 
@@ -298,6 +313,58 @@ class Q10Model(pl.LightningModule):
 		outputs = {'reco_hat': reco_hat, 'rb_hat': rb_hat, 'idx': idx}
 		self.train_step_outputs.append(outputs)
 		return total_loss
+
+
+	def inject_noise(self, noise_std):
+		"""
+		Adds a small amount of random noise to the parameters of the network.
+
+		Source: https://github.com/shibhansh/loss-of-plasticity/blob/main/lop/incremental_cifar/incremental_cifar_experiment.py
+		"""
+		with torch.no_grad():
+			for param in self.parameters():
+				param.add_(torch.randn(param.size(), device=param.device) * noise_std)
+
+
+	def inject_fisher_noise(self, noise_std):
+		self.step_number += 1
+		# print("Named parameters of the model:")
+		# for name, param in self.named_parameters():
+		# 	print(f"Name: {name} | Shape: {param.shape} | Requires grad {param.requires_grad}")
+		# # print("Fisher Noise", noise_std)
+		# print("Before fisher", list(self.parameters())[4])
+
+		for param_idx, param in enumerate(self.parameters()):
+			if not param.requires_grad:
+				continue
+			if param.grad is None:
+				# print("Param", param_idx, param.shape, "Grad is none!!!")
+				continue
+			grad = param.grad.detach()
+			# print("Param idx", param_idx, param.shape, grad.shape)
+			# print("Fisher shape", getattr(self, f"fisher_estimate_{param_idx}").shape)
+			
+			with torch.no_grad():
+				# self.running_fisher_estimate.append(getattr(self, f"fisher_estimate_{i}"))
+
+				setattr(self, f"fisher_estimate_{param_idx}", getattr(self, f"fisher_estimate_{param_idx}") + grad ** 2)
+				temp = 1 / (1e-10 + getattr(self, f"fisher_estimate_{param_idx}") / self.step_number)
+
+				if self.step_number % 100 == 1:
+					print("Param", param_idx, list(self.named_parameters())[param_idx][0], param.shape, "Temp", temp.abs().mean(), "Grad", grad.abs().mean())
+				param.add_(
+					torch.randn(param.size(), device=param.device)
+					* noise_std
+					* temp)
+		# print("After fisher", list(self.parameters())[4])
+
+
+	def on_before_optimizer_step(self, optimizer):
+		# Gradient noise
+		if self.hparams.noise_std > 0:
+			self.inject_noise(self.hparams.noise_std)
+		if self.hparams.fisher_noise_std > 0:
+			self.inject_fisher_noise(self.hparams.fisher_noise_std)
 
 
 
@@ -590,7 +657,7 @@ class Q10Model(pl.LightningModule):
 				{
 					'params': [self.q10, self.beta],
 					'weight_decay': 0.0,
-					'learning_rate': self.hparams.learning_rate * 100
+					'learning_rate': self.hparams.learning_rate * 10 # TODO CHECK IF THIS IS APPROPRIATEW
 				}
 			]
 		)

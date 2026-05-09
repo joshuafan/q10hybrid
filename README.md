@@ -70,7 +70,17 @@ ssh -N -J <username>@<server> <username>@<node> -L 8081:localhost:8081
 Finally, in all cases, navigate to http://127.0.0.1:8081/ in a local web browser.
 
 
+Example:
+```
+(Server)
+optuna-dashboard sqlite:///./logs/2F_abs_gradnoise_bn_bias_FIXED_kan_layers=2_constraint=relu/optuna.db --port 8081
 
+(Local)
+ssh -N -J jyf6@aida.cac.cornell.edu jyf6@c0013 -L 8081:localhost:8081
+
+(Browser)
+http://127.0.0.1:8081/
+```
 
 # Original README
 

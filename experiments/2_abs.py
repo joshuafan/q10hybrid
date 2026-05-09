@@ -12,6 +12,8 @@ python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 1 --sta
 python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 1 --stage tuning --log_dir "logs/2F_abs_FIXEDKAN3";
 python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning --log_dir "logs/2F_abs_FIXEDKAN3"
 
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage tuning --log_dir "logs/2F_abs_gradnoise"
+
 
 # Final
 python experiments/2_abs.py --model pure_nn --num_layers 2 --stage final --log_dir "logs/2F_abs_REPRO20260120";
@@ -19,7 +21,7 @@ python experiments/2_abs.py --model nn --rb_constraint softplus --num_layers 2 -
 python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 2 --stage final --log_dir "logs/2F_abs_REPRO20260120";
 python experiments/2_abs.py --model nn --rb_constraint relu --num_layers 1 --stage final --log_dir "logs/2F_abs_REPRO20260120";
 python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 1 --stage final --log_dir "logs/2F_abs_REPRO20260120";
-python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final --log_dir "logs/2F_abs_REPRO20260120_nondeterministic"
+python experiments/2_abs.py --model kan --rb_constraint relu --num_layers 2 --hidden_dim 8 --stage final --log_dir "logs/2F_abs_REPRO20260120"
 
 
 Result from paper: /home/fs01/jyf6/bulk_datasets/datasets/BINNS/src_binns/q10hybrid/logs/20250515_abs_REPRO_ZERO_kan_layers=2_constraint=relu
@@ -51,7 +53,7 @@ TRAINER_ARGS = dict(
     accelerator="auto",
     devices="auto",
     strategy="auto",
-    # deterministic=True,
+    deterministic=True,
 )
 
 
@@ -84,6 +86,8 @@ class Objective(object):
         lambda_kan_l1 = lambda_kan_entropy  #  trial.suggest_float('lambda_kan_l1', 1e-3, 1e-1)  # , log=True)  #  1e-2  # lambda_kan_entropy
         lambda_kan_coefdiff2 = trial.suggest_float('lambda_kan_coefdiff2', 1e-3, 1e-1)  # , log=True)  #, log=True)
         lambda_kan_coefdiff = 0.0  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1)  # lambda_kan_entropy  # trial.suggest_float('lambda_kan_coefdiff', 1e-3, 1e-1, log=True)
+        noise_std = trial.suggest_float('noise_std', 0, 1) if self.args.model == "kan" else 0.0
+        fisher_noise_std = trial.suggest_float('fisher_noise_std', 0, 1) if self.args.model == "kan" else 0.0
 
         # Optimization
         learning_rate = trial.suggest_float('learning_rate', 1e-2, 0.1, log=True)
@@ -159,6 +163,8 @@ class Objective(object):
             lambda_kan_entropy=lambda_kan_entropy,
             lambda_kan_coefdiff=lambda_kan_coefdiff,
             lambda_kan_coefdiff2=lambda_kan_coefdiff2,
+            noise_std=noise_std,
+            fisher_noise_std=fisher_noise_std,
             kan_grid=kan_grid,
             kan_update_grid=kan_update_grid,
             kan_grid_margin=kan_grid_margin,
@@ -403,13 +409,26 @@ def main(parser: ArgumentParser = None, **kwargs):
             #     'lambda_kan_coefdiff2': [1e-3, 1e-2, 1e-1, 1],  # 1e-2, 1e-1, 1],
             #     'seed': [1],
             # }
+            # search_space = {
+            #     'learning_rate': [1e-2],  #[1e-3, 1e-2, 1e-1],
+            #     'weight_decay': [0], #, 1e-4],
+            #     'lambda_kan_entropy': [1e-3, 1e-2, 1e-1],  # Currently tied
+            #     'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 1e-2, 1e-1, 1],
+            #     'seed': [1],
+            # }
+
+            # NOISE
             search_space = {
                 'learning_rate': [1e-2],  #[1e-3, 1e-2, 1e-1],
                 'weight_decay': [0], #, 1e-4],
-                'lambda_kan_entropy': [1e-3, 1e-2, 1e-1],  # Currently tied
-                'lambda_kan_coefdiff2': [1e-2, 1e-1, 1],  # 1e-2, 1e-1, 1],
+                'lambda_kan_entropy': [1e-3],  # Currently tied
+                'lambda_kan_coefdiff2': [1],  # 1e-2, 1e-1, 1],
+                'noise_std': [0, 1e-4, 1e-3, 1e-2, 1e-1, 1],
+                'fisher_noise_std': [0],
                 'seed': [1],
             }
+            print("hello")
+
 
     # Modify log_dir
     args.log_dir = args.log_dir + f'_{args.model}_layers={args.num_layers}_constraint={args.rb_constraint}'
